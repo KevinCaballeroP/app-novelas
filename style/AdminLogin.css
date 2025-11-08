@@ -1,0 +1,83 @@
+/* Fondo general */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1e3a8a, #4f46e5, #7c3aed);
+  padding: 20px;
+}
+
+/* Tarjeta del formulario */
+.login-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 400px;
+  padding: 40px 30px;
+  text-align: center;
+}
+
+/* Título */
+.login-title {
+  color: #ffffff;
+  font-size: 1.8rem;
+  font-weight: 600;
+  margin-bottom: 25px;
+}
+
+/* Formulario */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+/* Campo de entrada */
+.login-input {
+  padding: 10px 15px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-size: 1rem;
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.login-input::placeholder {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.login-input:focus {
+  border-color: #a5b4fc;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Botón */
+.login-button {
+  padding: 10px;
+  background-color: #4f46e5;
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+.login-button:hover {
+  background-color: #6366f1;
+  transform: translateY(-2px);
+}
+
+/* Error */
+.login-error {
+  margin-top: 15px;
+  color: #f87171;
+  font-size: 0.9rem;
+}

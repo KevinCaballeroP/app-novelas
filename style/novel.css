@@ -1,0 +1,143 @@
+/* Animaciones base */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Contenedor principal */
+.novel-container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #0f172a; /* Fondo oscuro */
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-family: "Inter", sans-serif;
+  color: #f1f5f9;
+  text-align: center;
+  animation: fadeIn 1s ease-in-out;
+}
+
+/* Encabezado (portada + info) */
+.novel-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  animation: fadeInUp 1s ease forwards;
+}
+
+/* Imagen de portada */
+.novel-cover {
+  width: 250px;
+  height: 350px;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.1);
+  animation: fadeInUp 1.2s ease forwards;
+}
+
+/* Información de la novela */
+.novel-info {
+  max-width: 700px;
+  animation: fadeInUp 1.4s ease forwards;
+}
+
+.novel-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 0.5rem;
+}
+
+.novel-author {
+  font-size: 1.1rem;
+  font-style: italic;
+  color: #94a3b8;
+  margin-top: 0.3rem;
+}
+
+.novel-description {
+  margin-top: 1rem;
+  line-height: 1.8;
+  font-size: 1rem;
+  color: #cbd5e1;
+}
+
+.novel-genres {
+  margin-top: 1rem;
+  animation: fadeInUp 1.6s ease forwards;
+}
+
+.genre-tag {
+  display: inline-block;
+  background: #1e293b;
+  color: #38bdf8;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  margin: 0.25rem;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.2);
+}
+
+/* Sección de capítulos */
+.novel-chapters {
+  margin-top: 2rem;
+  border-top: 1px solid #334155;
+  padding-top: 1rem;
+  animation: fadeInUp 1.8s ease forwards;
+}
+
+.novel-chapters h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: #38bdf8;
+}
+
+.novel-chapters ul {
+  list-style: none;
+  padding: 0;
+}
+
+.chapter-link {
+  display: block;
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  background: #1e293b;
+  color: #f1f5f9;
+  text-decoration: none;
+  transition: all 0.25s ease;
+  animation: fadeInUp 2s ease forwards;
+}
+
+.chapter-link:hover {
+  background: #38bdf8;
+  color: #0f172a;
+  transform: scale(1.03);
+}
+
+/* Error */
+.novel-error {
+  max-width: 700px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  background: #7f1d1d;
+  color: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  text-align: center;
+  animation: fadeIn 0.8s ease-in-out;
+}

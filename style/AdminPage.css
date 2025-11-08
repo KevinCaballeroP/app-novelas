@@ -1,0 +1,152 @@
+/* 🌌 Panel de Administración Mejorado */
+
+.admin-container {
+  background: radial-gradient(circle at top left, #0a0f2c, #050a1a, #01030b);
+  color: #e8f0ff;
+  min-height: 100vh;
+  padding: 60px 20px;
+  font-family: "Poppins", sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.admin-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 40px;
+  text-align: center;
+  color: #00b7ff;
+  text-shadow: 0 0 25px rgba(0, 183, 255, 0.6);
+  letter-spacing: 1px;
+}
+
+/* 🧾 Formulario principal */
+.admin-form {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 183, 255, 0.3);
+  border-radius: 16px;
+  padding: 35px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: 0 0 30px rgba(0, 183, 255, 0.15);
+  transition: all 0.3s ease;
+}
+
+.admin-form:hover {
+  box-shadow: 0 0 40px rgba(0, 183, 255, 0.35);
+}
+
+/* Inputs y textarea */
+.admin-form input,
+.admin-form textarea,
+.admin-select {
+  width: 100%;
+  padding: 12px 15px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(0, 183, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 1rem;
+  transition: all 0.25s ease;
+}
+
+.admin-form input:focus,
+.admin-form textarea:focus,
+.admin-select:focus {
+  outline: none;
+  border-color: #00b7ff;
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.4);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Botones */
+.admin-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 15px;
+}
+
+.admin-button {
+  background: linear-gradient(135deg, #007bff, #00b7ff);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.25s ease;
+}
+
+.admin-button:hover {
+  background: linear-gradient(135deg, #0099ff, #00e5ff);
+  transform: translateY(-3px);
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.4);
+}
+
+/* 🗑 Botón eliminar */
+.admin-button.delete {
+  background: linear-gradient(135deg, #e74c3c, #ff4f4f);
+}
+
+.admin-button.delete:hover {
+  background: linear-gradient(135deg, #ff5c5c, #ff8080);
+  box-shadow: 0 0 15px rgba(255, 60, 60, 0.4);
+}
+
+/* Imagen subida */
+.admin-upload-preview img {
+  width: 120px;
+  border-radius: 10px;
+  margin-top: 10px;
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.25);
+  transition: transform 0.3s ease;
+}
+
+.admin-upload-preview img:hover {
+  transform: scale(1.05);
+}
+
+/* Sección capítulos */
+.chapter-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin-top: 25px;
+  padding-top: 15px;
+}
+
+.chapter-section h2 {
+  font-size: 1.4rem;
+  color: #00b7ff;
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px rgba(0, 183, 255, 0.3);
+}
+
+.chapter-card {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(0, 183, 255, 0.15);
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 15px;
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.chapter-card:hover {
+  box-shadow: 0 0 25px rgba(0, 183, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+/* Select */
+.admin-select {
+  background-color: rgba(0, 183, 255, 0.1);
+  color: #e8f0ff;
+  border-radius: 10px;
+  margin-bottom: 25px;
+  text-align: center;
+  font-weight: 600;
+}
