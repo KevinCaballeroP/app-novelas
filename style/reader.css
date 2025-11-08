@@ -80,3 +80,23 @@ body.dark-mode .reader-content {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(0, 183, 255, 0.1);
 }
+
+.reader-back {
+  margin-bottom: 20px;
+}
+
+.back-button {
+  display: inline-block;
+  background-color: #4f46e5;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.back-button:hover {
+  background-color: #4338ca;
+}
+

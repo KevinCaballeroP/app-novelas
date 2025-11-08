@@ -1,5 +1,6 @@
 import { connectToDB } from "@/lib/mongodb";
 import mongoose from "mongoose";
+import Link from "next/link";
 import "@/style/novel.css"; // 👈 Asegúrate de tener este archivo
 
 const ChapterSchema = new mongoose.Schema({
@@ -32,6 +33,14 @@ export default async function NovelPage({ params }) {
 
   return (
     <div className="novel-container">
+      {/* 🔙 Botón de volver al inicio */}
+      <div className="novel-back">
+        <Link href="/" className="back-button">
+          ⬅️ Volver al inicio
+        </Link>
+      </div>
+
+      {/* 📖 Información principal */}
       <div className="novel-header">
         {novel.cover && (
           <img
@@ -54,6 +63,7 @@ export default async function NovelPage({ params }) {
         </div>
       </div>
 
+      {/* 📚 Lista de capítulos */}
       <div className="novel-chapters">
         <h2>📖 Capítulos</h2>
         <ul>

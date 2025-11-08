@@ -142,11 +142,38 @@
 }
 
 /* Select */
+/* 🎨 Selector de novelas */
 .admin-select {
-  background-color: rgba(0, 183, 255, 0.1);
-  color: #e8f0ff;
+  background-color: rgba(0, 10, 30, 0.8); /* Fondo más oscuro */
+  color: #ffffff; /* Texto blanco */
+  border: 1px solid rgba(0, 183, 255, 0.4);
   border-radius: 10px;
-  margin-bottom: 25px;
-  text-align: center;
+  padding: 12px 15px;
+  font-size: 1rem;
   font-weight: 600;
+  text-align: center;
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 25px;
+  cursor: pointer;
+  transition: all 0.25s ease;
 }
+
+/* Hover y focus */
+.admin-select:hover {
+  background-color: rgba(0, 20, 50, 0.9);
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.3);
+}
+
+.admin-select:focus {
+  outline: none;
+  border-color: #00b7ff;
+  box-shadow: 0 0 20px rgba(0, 183, 255, 0.5);
+}
+
+/* Estilo de las opciones del menú desplegable */
+.admin-select option {
+  background-color: #0a0f2c;
+  color: #ffffff; /* texto blanco dentro de las opciones */
+}
+

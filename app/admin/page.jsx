@@ -46,7 +46,7 @@ export default function AdminPage() {
       setTitle(novela.title || "");
       setDescription(novela.description || "");
       setAuthor(novela.author || "");
-      setCover(novela.coverImage || "");
+      setCover(novela.cover || "");
       setChapters(
         novela.chapters?.length ? novela.chapters : [{ title: "", content: "" }]
       );
@@ -60,7 +60,7 @@ export default function AdminPage() {
       title,
       description,
       author,
-      coverImage: cover,
+      cover, 
       chapters,
     };
 
