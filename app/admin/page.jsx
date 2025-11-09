@@ -121,6 +121,14 @@ export default function AdminPage() {
   return (
     <div className="admin-container">
       <h1 className="admin-title">Panel de Administración</h1>
+      <div className="home-button-container">
+  <button
+    className="admin-button home"
+    onClick={() => (window.location.href = "/")}
+  >
+    ⬅ Volver al inicio
+  </button>
+</div>
 
       <select
         value={selectedId}

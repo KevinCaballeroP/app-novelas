@@ -176,4 +176,16 @@
   background-color: #0a0f2c;
   color: #ffffff; /* texto blanco dentro de las opciones */
 }
+/* 🔙 Botón volver al inicio */
+.admin-button.home {
+  background: linear-gradient(135deg, #00b7ff, #00e5ff);
+  margin-bottom: 25px;
+  align-self: flex-start;
+}
+
+.admin-button.home:hover {
+  background: linear-gradient(135deg, #0099ff, #00b7ff);
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.4);
+  transform: translateY(-3px);
+}
 
