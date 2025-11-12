@@ -13,6 +13,10 @@ export default function AdminPage() {
   const [file, setFile] = useState(null);
   const [chapters, setChapters] = useState([{ title: "", content: "" }]);
   const [uploading, setUploading] = useState(false);
+  const [genres, setGenres] = useState([]);
+const [genresText, setGenresText] = useState("");
+
+
 
   useEffect(() => {
     fetch("/api/novels")
@@ -39,30 +43,43 @@ export default function AdminPage() {
   };
 
   // 🟢 Cargar datos de novela seleccionada
-  const handleSelectChange = (id) => {
-    setSelectedId(id);
-    const novela = novels.find((n) => n._id === id);
-    if (novela) {
-      setTitle(novela.title || "");
-      setDescription(novela.description || "");
-      setAuthor(novela.author || "");
-      setCover(novela.cover || "");
-      setChapters(
-        novela.chapters?.length ? novela.chapters : [{ title: "", content: "" }]
-      );
-    }
-  };
+const handleSelectChange = (id) => {
+  setSelectedId(id);
+  const novela = novels.find((n) => n._id === id);
+  if (novela) {
+    setTitle(novela.title || "");
+    setDescription(novela.description || "");
+    setAuthor(novela.author || "");
+    setCover(novela.cover || "");
+    setChapters(
+      novela.chapters?.length ? novela.chapters : [{ title: "", content: "" }]
+    );
+    setGenres(novela.genres || []);
+    setGenresText((novela.genres || []).join(", ")); // 👈
+  } else {
+    setGenres([]);
+    setGenresText("");
+  }
+};
+
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     const payload = {
-      title,
-      description,
-      author,
-      cover, 
-      chapters,
-    };
+  title,
+  description,
+  author,
+  cover,
+  chapters,
+  genres: genresText
+    .split(",")
+    .map((g) => g.trim())
+    .filter((g) => g.length > 0),
+};
+
+
 
     const url = selectedId ? `/api/novels/${selectedId}` : "/api/novels";
     const method = selectedId ? "PUT" : "POST";
@@ -147,6 +164,45 @@ export default function AdminPage() {
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título" />
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descripción" />
         <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Autor" />
+        {/* 🟢 Campo de categorías */}
+{/* 🟢 Campo de categorías mejorado con tags */}
+<div className="genres-section">
+  <label>Categorías:</label>
+
+  {/* Campo de entrada */}
+  <input
+    type="text"
+    value={genresText}
+    onChange={(e) => setGenresText(e.target.value)}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" || e.key === ",") {
+        e.preventDefault();
+        const newGenre = e.target.value.trim().replace(",", "");
+        if (newGenre && !genres.includes(newGenre)) {
+          setGenres([...genres, newGenre]);
+        }
+        setGenresText("");
+      }
+    }}
+    placeholder="Escribe una categoría y presiona Enter o coma"
+  />
+
+  {/* Visualización de tags */}
+  <div className="genres-tags">
+    {genres.map((g, i) => (
+      <span key={i} className="genre-tag">
+        {g}
+        <button
+          type="button"
+          className="remove-tag"
+          onClick={() => setGenres(genres.filter((_, idx) => idx !== i))}
+        >
+          ✕
+        </button>
+      </span>
+    ))}
+  </div>
+</div>
 
         <input type="file" onChange={handleFileChange} />
         <div className="admin-buttons">

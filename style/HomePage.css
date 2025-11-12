@@ -133,3 +133,49 @@ body {
   font-size: 1.1rem;
   font-weight: 600;
 }
+.filter-container {
+  display: flex;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.filter-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+}
+/* 🎨 Contenedor de botones de géneros */
+.genre-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+/* Botones de categorías */
+.genre-btn {
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 183, 255, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.25s ease;
+  text-shadow: 0 0 8px rgba(0, 183, 255, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.genre-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+}
+
+/* Botón activo (categoría seleccionada) */
+.genre-btn.active {
+  color: white !important;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.7);
+  transform: scale(1.05);
+}
+
