@@ -2,12 +2,12 @@ import { connectToDB } from "@/lib/mongodb";
 import { Novel } from "@/models/Novel";
 import { NextResponse } from "next/server";
 
-// ✅ Obtener una novela por ID
-export async function GET(req, { params }) {
+// Obtener una novela por ID
+export async function GET(req, ctx) {
   try {
     await connectToDB();
+    const { id } = await ctx.params;
 
-    const { id } = params;
     if (!id) {
       return NextResponse.json({ error: "ID no proporcionado" }, { status: 400 });
     }
@@ -24,11 +24,11 @@ export async function GET(req, { params }) {
   }
 }
 
-// ✏️ Actualizar novela
-export async function PUT(req, { params }) {
+// Actualizar novela
+export async function PUT(req, ctx) {
   try {
     await connectToDB();
-    const { id } = params;
+    const { id } = await ctx.params;
     const body = await req.json();
 
     const updated = await Novel.findByIdAndUpdate(id, body, { new: true });
@@ -43,11 +43,11 @@ export async function PUT(req, { params }) {
   }
 }
 
-// 🗑️ Eliminar novela
-export async function DELETE(req, { params }) {
+// Eliminar novela
+export async function DELETE(req, ctx) {
   try {
     await connectToDB();
-    const { id } = params;
+    const { id } = await ctx.params;
 
     const deleted = await Novel.findByIdAndDelete(id);
     if (!deleted) {

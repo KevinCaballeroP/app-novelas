@@ -28,7 +28,10 @@ export default async function NovelPage({ params }) {
     return <div className="novel-error">❌ ID inválido o no proporcionado</div>;
   }
 
-  const novel = await Novel.findById(id).lean();
+ let novel = await Novel.findById(id).lean();
+
+// Convertir todo a JSON plano
+novel = JSON.parse(JSON.stringify(novel));
   if (!novel) return <div className="novel-error">❌ Novela no encontrada</div>;
 
   return (

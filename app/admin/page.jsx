@@ -14,15 +14,39 @@ export default function AdminPage() {
   const [chapters, setChapters] = useState([{ title: "", content: "" }]);
   const [uploading, setUploading] = useState(false);
   const [genres, setGenres] = useState([]);
-const [genresText, setGenresText] = useState("");
+  const [genresText, setGenresText] = useState("");
 
 
 
   useEffect(() => {
-    fetch("/api/novels")
-      .then((res) => res.json())
-      .then((data) => setNovels(data));
-  }, []);
+  const currentUser = sessionStorage.getItem("adminUser");
+
+  fetch("/api/novels")
+    .then((res) => res.json())
+    .then((data) => {
+
+      const userNovels = data.filter((novel) => {
+        const author = novel.author;
+
+        // 1️⃣ Novelas antiguas (author en texto)
+        // Se muestran SIEMPRE
+        if (typeof author === "string") {
+          return true;
+        }
+
+        // 2️⃣ Novelas nuevas (author es ObjectId)
+        // Mostrar solo si pertenece al usuario
+        try {
+          return author.toString() === currentUser;
+        } catch {
+          return false;
+        }
+      });
+
+      setNovels(userNovels);
+    });
+}, []);
+
 
   const handleFileChange = (e) => setFile(e.target.files[0]);
 

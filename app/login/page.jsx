@@ -11,40 +11,38 @@ export default function AdminLogin() {
   const [isRegister, setIsRegister] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
 
-    const users = JSON.parse(localStorage.getItem("adminUsers") || "[]");
+  const url = isRegister ? "/api/register" : "/api/login";
+  
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
 
-    if (isRegister) {
-      // Evitar duplicados
-      if (users.find((u) => u.username === username)) {
-        setError("El usuario ya existe");
-        return;
-      }
+  const data = await res.json();
 
-      // Registrar nuevo usuario
-      users.push({ username, password });
-      localStorage.setItem("adminUsers", JSON.stringify(users));
-      setError("");
-      alert("Usuario registrado con éxito. Ahora puedes iniciar sesión.");
-      setIsRegister(false);
-      setUsername("");
-      setPassword("");
-    } else {
-      // Login
-      const user = users.find(
-        (u) => u.username === username && u.password === password
-      );
+  if (!res.ok) {
+    setError(data.error);
+    return;
+  }
 
-      if (user) {
-        sessionStorage.setItem("adminAuth", "true");
-        router.push("/admin");
-      } else {
-        setError("Usuario o contraseña incorrectos");
-      }
-    }
-  };
+  if (isRegister) {
+    alert("Usuario registrado. Ahora inicia sesión.");
+    setIsRegister(false);
+    return;
+  }
+
+  // Login OK
+  sessionStorage.setItem("adminAuth", "true");
+  sessionStorage.setItem("adminUser", data.username);
+
+  router.push("/admin");
+};
+
 
   return (
     <main className="login-container">
