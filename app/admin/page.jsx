@@ -16,35 +16,24 @@ export default function AdminPage() {
   const [genres, setGenres] = useState([]);
   const [genresText, setGenresText] = useState("");
 
-
-
-  useEffect(() => {
+const loadNovels = async () => {
   const currentUser = sessionStorage.getItem("adminUser");
 
-  fetch("/api/novels")
-    .then((res) => res.json())
-    .then((data) => {
+  const res = await fetch("/api/novels");
+  const data = await res.json();
 
-      const userNovels = data.filter((novel) => {
-        const author = novel.author;
+  const userNovels = data.filter((novel) => {
+    // novelas viejas sin author → se muestran igual
+    if (!novel.author) return true;
 
-        // 1️⃣ Novelas antiguas (author en texto)
-        // Se muestran SIEMPRE
-        if (typeof author === "string") {
-          return true;
-        }
+    return novel.author === currentUser;
+  });
 
-        // 2️⃣ Novelas nuevas (author es ObjectId)
-        // Mostrar solo si pertenece al usuario
-        try {
-          return author.toString() === currentUser;
-        } catch {
-          return false;
-        }
-      });
+  setNovels(userNovels);
+};
 
-      setNovels(userNovels);
-    });
+useEffect(() => {
+   loadNovels();
 }, []);
 
 
@@ -53,6 +42,7 @@ export default function AdminPage() {
   const uploadImage = async () => {
     if (!file) return;
     setUploading(true);
+
     const formData = new FormData();
     formData.append("file", file);
 
@@ -66,66 +56,61 @@ export default function AdminPage() {
     setUploading(false);
   };
 
-  // 🟢 Cargar datos de novela seleccionada
-const handleSelectChange = (id) => {
-  setSelectedId(id);
-  const novela = novels.find((n) => n._id === id);
-  if (novela) {
-    setTitle(novela.title || "");
-    setDescription(novela.description || "");
-    setAuthor(novela.author || "");
-    setCover(novela.cover || "");
-    setChapters(
-      novela.chapters?.length ? novela.chapters : [{ title: "", content: "" }]
-    );
-    setGenres(novela.genres || []);
-    setGenresText((novela.genres || []).join(", ")); // 👈
+  const handleSelectChange = (id) => {
+    setSelectedId(id);
+    const novela = novels.find((n) => n._id === id);
+
+    if (novela) {
+      setTitle(novela.title || "");
+      setDescription(novela.description || "");
+      setAuthor(novela.author || "");
+      setCover(novela.cover || "");
+      setChapters(novela.chapters?.length ? novela.chapters : [{ title: "", content: "" }]);
+      setGenres(novela.genres || []);
+      setGenresText((novela.genres || []).join(", "));
+    } else {
+      setGenres([]);
+      setGenresText("");
+    }
+  };
+
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  const currentUser = sessionStorage.getItem("adminUser");
+
+  const payload = {
+    title,
+    description,
+    author: currentUser, // 👈 SIEMPRE GUARDA EL ID DEL USUARIO
+    cover,
+    chapters,
+    genres: genresText
+      .split(",")
+      .map((g) => g.trim())
+      .filter((g) => g.length > 0),
+  };
+
+  const url = selectedId ? `/api/novels/${selectedId}` : "/api/novels";
+  const method = selectedId ? "PUT" : "POST";
+
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    alert(selectedId ? "Novela actualizada correctamente" : "Novela guardada correctamente");
+    resetForm();
+   await loadNovels();
   } else {
-    setGenres([]);
-    setGenresText("");
+    const error = await res.json();
+    alert("Error: " + error.error);
   }
 };
 
 
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const payload = {
-  title,
-  description,
-  author,
-  cover,
-  chapters,
-  genres: genresText
-    .split(",")
-    .map((g) => g.trim())
-    .filter((g) => g.length > 0),
-};
-
-
-
-    const url = selectedId ? `/api/novels/${selectedId}` : "/api/novels";
-    const method = selectedId ? "PUT" : "POST";
-
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      alert(selectedId ? "Novela actualizada correctamente" : "Novela guardada correctamente");
-      resetForm();
-      const updated = await fetch("/api/novels").then((r) => r.json());
-      setNovels(updated);
-    } else {
-      const error = await res.json();
-      alert("Error: " + error.error);
-    }
-  };
-
-  // 🔴 Eliminar novela
   const handleDelete = async () => {
     if (!selectedId) {
       alert("Selecciona una novela para eliminar");
@@ -141,8 +126,9 @@ const handleSelectChange = (id) => {
     if (res.ok) {
       alert("Novela eliminada correctamente");
       resetForm();
-      const updated = await fetch("/api/novels").then((r) => r.json());
-      setNovels(updated);
+
+      await loadNovels();
+
     } else {
       const error = await res.json();
       alert("Error al eliminar: " + error.error);
@@ -171,7 +157,7 @@ const handleSelectChange = (id) => {
   </button>
 </div>
 
-      <select
+       <select
         value={selectedId}
         onChange={(e) => handleSelectChange(e.target.value)}
         className="admin-select"
@@ -187,7 +173,7 @@ const handleSelectChange = (id) => {
       <form onSubmit={handleSubmit} className="admin-form">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título" />
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descripción" />
-        <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Autor" />
+        {/* <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Autor" />  */}
         {/* 🟢 Campo de categorías */}
 {/* 🟢 Campo de categorías mejorado con tags */}
 <div className="genres-section">

@@ -5,23 +5,23 @@ const ChapterSchema = new mongoose.Schema({
   content: String,
 });
 
-const NovelSchema = new mongoose.Schema({
- title: {
+const NovelSchema = new mongoose.Schema(
+  {
+    title: {
       type: String,
       required: true,
     },
     author: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-  },
+      type: String,   // 👈 EMAIL, no objectId
+      required: true,
+    },
     description: {
       type: String,
       required: true,
     },
     cover: {
       type: String,
-      default: "", // URL de la portada si existe
+      default: "",
     },
     genres: {
       type: [String],
@@ -31,11 +31,16 @@ const NovelSchema = new mongoose.Schema({
       type: Number,
       default: null,
     },
-  chapters: [ChapterSchema],  
-},
- {
-    timestamps: true, // createdAt y updatedAt automáticos
+    chapters: [ChapterSchema],
+  },
+  {
+    timestamps: true,
   }
 );
 
-export const Novel = mongoose.models.Novel || mongoose.model("Novel", NovelSchema);
+// 👇 Fuerza a Mongoose a regenerar el modelo
+if (mongoose.models.Novel) {
+  delete mongoose.models.Novel;
+}
+
+export const Novel = mongoose.model("Novel", NovelSchema);
