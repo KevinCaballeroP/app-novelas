@@ -145,6 +145,35 @@ useEffect(() => {
     setChapters([{ title: "", content: "" }]);
   };
 
+  const generateChapterAI = async () => {
+  const res = await fetch("/api/ai/generate-chapter", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      description,
+      chapters,
+    }),
+  });
+
+  const data = await res.json();
+
+  if (data.chapter) {
+    const lines = data.chapter.split("\n").filter(l => l.trim() !== "");
+
+    const newChapter = {
+      title: lines[0].replace("Título:", "").trim(),
+      content: lines.slice(1).join("\n"),
+    };
+
+    setChapters([...chapters, newChapter]);
+    alert("Capítulo generado con IA");
+  } else {
+    alert("Error generando capítulo");
+  }
+};
+
+
   return (
     <div className="admin-container">
       <h1 className="admin-title">Panel de Administración</h1>
@@ -262,10 +291,25 @@ useEffect(() => {
           <button
             type="button"
             className="admin-button"
+            onClick={generateChapterAI}
+          >
+            ✨ Generar Capítulo con IA
+          </button>   
+          <button
+            type="button"
+            className="admin-button"
             onClick={() => setChapters([...chapters, { title: "", content: "" }])}
           >
             + Agregar Capítulo
           </button>
+         <button
+          type="button"
+          className="admin-button"
+          onClick={() => setChapters(chapters.slice(0, -1))}
+          >
+          ➖ Quitar Capítulo
+          </button>
+
           <button type="submit" className="admin-button">
             {selectedId ? "Actualizar novela" : "Guardar novela"}
           </button>

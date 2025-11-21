@@ -14,9 +14,12 @@
       "cloudinary": "^2.8.0",
       "dotenv": "^17.2.1",
       "formidable": "^3.5.4",
+      "gpt4all": "^4.0.0",
+      "groq-sdk": "^0.36.0",
       "mongoose": "^8.17.1",
       "multer": "^2.0.2",
       "next": "15.4.5",
+      "openai": "^6.9.1",
       "react": "19.1.0",
       "react-dom": "19.1.0",
       "streamifier": "^0.1.1"
