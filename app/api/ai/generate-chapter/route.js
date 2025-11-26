@@ -1,148 +1,143 @@
+// api/generate-chapter/route.js
 import Groq from "groq-sdk";
+import { NextResponse } from "next/server";
+import { connectToDB } from "@/lib/mongodb";
+import AuthorStyle from "@/models/AuthorStyle";
 
 export const runtime = "nodejs";
 
 const client = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.GROQ_API_KEY
 });
 
-// --- Utilidades --------------------------------------------------
-
-async function generateSummary(chapters) {
-  if (chapters.length === 0) return "No hay capítulos previos.";
-
-  const text = chapters.map((c, i) => `Cap ${i + 1}: ${c.content}`).join("\n\n");
-
-  const prompt = `
-Resume la siguiente novela en máximo 15 puntos claros. 
-No describas cada capítulo, solo los eventos globales más importantes:
-${text}
-  `;
-
-  const res = await client.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.3,
-  });
-
-  return res.choices[0].message.content;
-}
-
+// Función para extraer el último párrafo útil
 function extractLastParagraph(text) {
-  const paragraphs = text.trim().split("\n").filter(p => p.length > 40);
-  return paragraphs[paragraphs.length - 1] || text.slice(-200);
-}
+  const p = text
+    .split("\n")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 20);
 
-// ------------------------------------------------------------------
+  return p[p.length - 1] || text;
+}
 
 export async function POST(req) {
   try {
-    const { title, description, chapters } = await req.json();
+    await connectToDB();
 
-    // === 1) RESUMEN DE LA HISTORIA (excepto el último capítulo) ===
-    const previousChapters = chapters.slice(0, -1);
+    const { novelId, title, description, chapters, options = {} } =
+      await req.json();
+
+    if (!novelId)
+      return NextResponse.json(
+        { error: "novelId requerido" },
+        { status: 400 }
+      );
+
+    if (!chapters?.length)
+      return NextResponse.json(
+        { error: "Debe haber mínimo 1 capítulo previo" },
+        { status: 400 }
+      );
+
+    // Buscar estilo aprendido
+    const styleDoc = await AuthorStyle.findOne({ novelId });
+    const authorStyle = styleDoc?.style || null;
+
     const lastChapter = chapters[chapters.length - 1];
-
-    const summary = await generateSummary(previousChapters);
     const lastParagraph = extractLastParagraph(lastChapter.content);
 
-    // === 2) PASO 1: Generar outline sólido ==========================
+    // Bloque de estilo
+    const styleProfile = authorStyle
+      ? JSON.stringify(authorStyle, null, 2)
+      : null;
+
+    const styleBlock = authorStyle
+      ? `Estilo del autor (aplícalo exactamente):\n${styleProfile}\n`
+      : "";
+
+    // ===============================
+    // GENERAR OUTLINE DEL CAPÍTULO
+    // ===============================
     const outlinePrompt = `
-        Eres un escritor profesional que crea novelas ligeras de fantasía y ciencia ficción.
+Eres un escritor profesional.
 
-        NOVELA:
-        Título: ${title}
+${styleBlock}
 
-        RESUMEN DE LA HISTORIA:
-        ${summary}
+Genera un OUTLINE de 4–6 puntos para el siguiente capítulo.
 
-        ÚLTIMO PÁRRAFO DEL CAPÍTULO ANTERIOR:
-        "${lastParagraph}"
+Debe continuar inmediatamente después del último párrafo:
 
-        TAREA:
-        Crea un **esquema detallado (outline)** del próximo capítulo.
-        Debe incluir:
+"${lastParagraph}"
 
-        - 4–7 puntos clave
-        - Conflicto principal
-        - Evolución emocional de los personajes
-        - Giro o revelación del final del capítulo
-        - Clímax
-        Formato:
+El outline debe avanzar la historia sin repetir eventos previos.
+`;
 
-        Outline:
-        - punto 1
-        - punto 2
-        - punto 3
-...
-    `;
-
-    const outlineCompletion = await client.chat.completions.create({
+    const outlineRes = await client.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
-        { role: "system", content: "Eres un escritor profesional altamente consistente." },
+        { role: "system", content: "Eres un escritor profesional." },
         { role: "user", content: outlinePrompt },
       ],
       temperature: 0.5,
     });
 
-    const outline = outlineCompletion.choices[0].message.content;
+    const outline = outlineRes.choices[0].message.content.trim();
 
-    // === 3) PASO 2: Generar el capítulo completo =====================
+    // ===============================
+    // GENERAR EL CAPÍTULO COMPLETO
+    // ===============================
     const chapterPrompt = `
-Eres un escritor profesional de novelas ligeras, fantasía y ciencia ficción.
 
-DATOS DE LA NOVELA
-Título: ${title}
-Descripción: ${description}
+Eres un escritor profesional especializado en novelas ligeras, fantasía y ciencia ficción.
 
-RESUMEN GLOBAL DE LA HISTORIA:
-${summary}
+${styleBlock}
 
-ÚLTIMO PÁRRAFO DEL CAPÍTULO ANTERIOR:
-"${lastParagraph}"
+Tu tarea es escribir el **siguiente capítulo** de esta novela.
+Debes continuar EXACTAMENTE donde terminó el capítulo anterior.
+No repitas nada ya dicho.
 
-ESQUEMA DEL/NUEVO CAPÍTULO (obligatorio seguir):
+Título de la novela:
+${title}
+
+Descripción:
+${description}
+
+Capítulos anteriores (contexto):
+${chapters
+    .map((c, index) => `Capítulo ${index + 1}:\n${c.content}`)
+    .join("\n\n---\n\n")}
+
+OUTLINE para este capítulo:
 ${outline}
 
-TAREA:
-Escribe ahora el capítulo completo, siguiendo EXACTAMENTE el outline.
-Entre 600 y 1000 palabras.
-
-REGLAS IMPORTANTES:
-1. No repitas ningún contenido previo.
-2. Debes continuar exactamente donde quedó el último capítulo.
-3. Mantén coherencia, estilo y ritmo.
-4. Evita frases idénticas a capítulos anteriores.
-5. El capítulo debe terminar con un gancho narrativo fuerte.
-
-FORMATO OBLIGATORIO:
+Reglas estrictas:
+1. No repitas contenido previo ni resumas capítulos anteriores.
+2. Mantén fidelidad TOTAL al estilo del autor.
+3. Sigue el outline, pero mejora la narrativa si es necesario.
+4. Mínimo ${options.minWords || 600} palabras, máximo ${
+      options.maxWords || 1000
+    }.
+5. Devuelve SOLO este formato:
 
 Título: [título del capítulo]
-
 Contenido:
-[contenido en múltiples párrafos]
-    `;
+[texto del capítulo]
+`;
 
-    const completion = await client.chat.completions.create({
+    const chapterRes = await client.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
-        { role: "system", content: "Eres un escritor profesional experto en continuidad narrativa." },
+        { role: "system", content: "Devuelve SOLO el capítulo." },
         { role: "user", content: chapterPrompt },
       ],
-      temperature: 0.7,
-      top_p: 0.9,
+      temperature: options.temperature ?? 0.7,
     });
 
-    const chapter = completion.choices[0].message.content;
+    const chapter = chapterRes.choices[0].message.content.trim();
 
-    return Response.json({
-      outline,
-      chapter,
-    });
-
-  } catch (error) {
-    console.error("AI ERROR:", error);
-    return Response.json({ error: "Error generando capítulo" }, { status: 500 });
+    return NextResponse.json({ outline, chapter });
+  } catch (err) {
+    console.error("AI ERROR:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

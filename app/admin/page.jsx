@@ -150,11 +150,13 @@ useEffect(() => {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      novelId: selectedId,   // 👈 AQUI LO MANDAMOS
       title,
       description,
       chapters,
     }),
   });
+
 
   const data = await res.json();
 

@@ -259,3 +259,56 @@
 .remove-tag:hover {
   color: #ff8080;
 }
+
+/* 🎯 Mejor diseño para cada capítulo */
+.chapter-card {
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(0, 183, 255, 0.25);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  box-shadow: 0 0 20px rgba(0, 183, 255, 0.15);
+  transition: all 0.25s ease;
+}
+
+.chapter-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 30px rgba(0, 183, 255, 0.30);
+}
+
+/* 📝 Título del capítulo */
+.chapter-card input {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 183, 255, 0.3);
+  padding: 12px 14px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+/* ✍️ Contenido del capítulo */
+.chapter-card textarea {
+  min-height: 220px;            /* MÁS ALTO */
+  resize: vertical;             /* Permite agrandar */
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 183, 255, 0.3);
+  padding: 14px;
+  border-radius: 10px;
+  color: #e9f4ff;
+  font-size: 1rem;
+  line-height: 1.5;
+  transition: all 0.2s ease;
+}
+
+.chapter-card textarea:focus,
+.chapter-card input:focus {
+  outline: none;
+  border-color: #00e5ff;
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+}
