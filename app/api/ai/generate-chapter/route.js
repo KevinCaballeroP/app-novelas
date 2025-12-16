@@ -86,6 +86,8 @@ El outline debe avanzar la historia sin repetir eventos previos.
     // ===============================
     // GENERAR EL CAPÍTULO COMPLETO
     // ===============================
+    // Usar solo los últimos 2 capítulos para evitar exceso de tokens
+const contextChapters = chapters.slice(-2);
     const chapterPrompt = `
 
 Eres un escritor profesional especializado en novelas ligeras, fantasía y ciencia ficción.
@@ -103,9 +105,13 @@ Descripción:
 ${description}
 
 Capítulos anteriores (contexto):
-${chapters
-    .map((c, index) => `Capítulo ${index + 1}:\n${c.content}`)
-    .join("\n\n---\n\n")}
+${contextChapters
+  .map(
+    (c, index) =>
+      `Capítulo ${chapters.length - contextChapters.length + index + 1}:\n${c.content}`
+  )
+  .join("\n\n---\n\n")}
+
 
 OUTLINE para este capítulo:
 ${outline}

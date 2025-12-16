@@ -312,3 +312,65 @@
   border-color: #00e5ff;
   box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
 }
+
+/* Botones azules */
+.admin-button {
+  background: linear-gradient(135deg, #007bff, #00b7ff);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: all 0.25s ease;
+}
+
+.admin-button:hover {
+  background: linear-gradient(135deg, #0099ff, #00e5ff);
+  transform: translateY(-3px);
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.4);
+}
+
+/* Eliminar */
+.admin-button.delete {
+  background: linear-gradient(135deg, #e74c3c, #ff4f4f);
+}
+
+.admin-button.delete:hover {
+  background: linear-gradient(135deg, #ff5c5c, #ff8080);
+}
+
+/* Encabezados azules */
+h2, h3, h4 {
+  color: #00b7ff !important;
+  text-shadow: 0 0 10px rgba(0, 183, 255, 0.4);
+}
+
+/* Portada pequeña */
+.cover-preview {
+  width: 180px;
+  max-height: 250px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-top: 15px;
+  box-shadow: 0 0 15px rgba(0, 183, 255, 0.3);
+}
+.tab-buttons {
+  display: flex;
+  gap: 15px; /* ← separación */
+  justify-content: center;
+  margin-bottom: 25px;
+}
+
+.tab-buttons .admin-button {
+  min-width: 140px;
+  text-align: center;
+}
+
+.admin-select {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+}
+

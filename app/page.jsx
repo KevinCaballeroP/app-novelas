@@ -7,15 +7,25 @@ import "../style/HomePage.css";
 
 export default function HomePage() {
   const [novels, setNovels] = useState([]);
+  const [mangas, setMangas] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedGenre, setSelectedGenre] = useState("");
 
+  // 🔹 Cargar novelas
   useEffect(() => {
     fetch("/api/novels")
       .then((res) => res.json())
       .then((data) => setNovels(data));
   }, []);
 
+  // 🔹 Cargar mangas
+  useEffect(() => {
+    fetch("/api/mangas")
+      .then((res) => res.json())
+      .then((data) => setMangas(data));
+  }, []);
+
+  // 🔹 Filtro novelas
   const filteredNovels = novels.filter((novel) => {
     const matchesSearch = novel.title
       .toLowerCase()
@@ -28,10 +38,18 @@ export default function HomePage() {
     return matchesSearch && matchesGenre;
   });
 
+  // 🔹 Filtro mangas
+  const filteredMangas = mangas.filter((manga) => {
+    const matchesSearch = manga.title
+      .toLowerCase()
+      .includes(search.toLowerCase());
+
+    return matchesSearch;
+  });
+
   // 🔹 Obtener géneros únicos
   const genres = [...new Set(novels.flatMap((n) => n.genres || []))];
 
-  // 🔹 Colores visuales asignados por índice
   const genreColors = [
     "#00b7ff",
     "#ff007a",
@@ -44,7 +62,7 @@ export default function HomePage() {
 
   return (
     <>
-      {/* 🔷 Encabezado / Navbar */}
+      {/* 🔷 Navbar */}
       <header className="navbar">
         <div className="navbar-content">
           <Link href="/" className="navbar-logo">
@@ -59,11 +77,10 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* 🔹 Contenido principal */}
       <main className="main-container">
         <h1>📚 Novelas disponibles</h1>
 
-        {/* 🟢 Filtro por categorías (color tags) */}
+        {/* 🔹 Filtros */}
         <div className="genre-filter">
           <button
             className={`genre-btn ${selectedGenre === "" ? "active" : ""}`}
@@ -97,30 +114,52 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 🟣 Buscador */}
+        {/* 🔹 Buscador */}
         <input
           type="text"
-          placeholder="Buscar novela..."
+          placeholder="Buscar..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="search-bar"
         />
 
-        {/* 🟠 Grid de novelas */}
+        {/* 🟠 NOVELAS */}
+        <h2>📖 Novelas</h2>
         <div className="novels-grid">
-          {filteredNovels.map((novel) =>
-            novel._id ? (
-              <Link
-                key={novel._id}
-                href={`/novel/${novel._id}`}
-                className="card-link"
-              >
-                <NovelCard novel={novel} />
-              </Link>
-            ) : (
-              <div key={novel.title}>Novela sin ID</div>
-            )
-          )}
+          {filteredNovels.map((novel) => (
+            <Link
+              key={novel._id}
+              href={`/novel/${novel._id}`}
+              className="card-link"
+            >
+              <NovelCard novel={novel} />
+            </Link>
+          ))}
+        </div>
+
+        {/* 🟣 MANGAS */}
+        <h2>🖤 Mangas</h2>
+        <div className="novels-grid">
+          {filteredMangas.map((manga) => (
+            <Link
+              key={manga._id}
+              href={`/manga/${manga._id}`}
+              className="card-link"
+            >
+              <div className="novel-card">
+                {manga.coverUrl ? (
+  <img
+    src={manga.coverUrl}
+    className="novel-cover"
+    alt="Manga Cover"
+  />
+) : null}
+
+                <h3>{manga.title}</h3>
+                <p>{manga.author}</p>
+              </div>
+            </Link>
+          ))}
         </div>
       </main>
     </>

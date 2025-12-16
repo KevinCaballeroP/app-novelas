@@ -4,40 +4,53 @@ import { useState, useEffect } from "react";
 import "../../style/AdminPage.css";
 
 export default function AdminPage() {
+  // TAB SELECTION
+  const [tab, setTab] = useState("novels");
+
+  // STORES
   const [novels, setNovels] = useState([]);
+  const [mangas, setMangas] = useState([]);
+
+  // COMMON FORM STATES
   const [selectedId, setSelectedId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [author, setAuthor] = useState("");
   const [cover, setCover] = useState("");
   const [file, setFile] = useState(null);
+
+  // NOVEL
   const [chapters, setChapters] = useState([{ title: "", content: "" }]);
-  const [uploading, setUploading] = useState(false);
   const [genres, setGenres] = useState([]);
   const [genresText, setGenresText] = useState("");
+  const [uploading, setUploading] = useState(false);
 
-const loadNovels = async () => {
-  const currentUser = sessionStorage.getItem("adminUser");
+  // MANGA
+  const [mangaPages, setMangaPages] = useState([]);
 
-  const res = await fetch("/api/novels");
-  const data = await res.json();
+  // -------------------------------------------------
+  // LOAD DATA
+  // -------------------------------------------------
+  const loadData = async () => {
+    const currentUser = sessionStorage.getItem("adminUser");
 
-  const userNovels = data.filter((novel) => {
-    // novelas viejas sin author → se muestran igual
-    if (!novel.author) return true;
+    const resNovels = await fetch("/api/novels");
+    const resMangas = await fetch("/api/mangas");
 
-    return novel.author === currentUser;
-  });
+    const novelsData = await resNovels.json();
+    const mangasData = await resMangas.json();
 
-  setNovels(userNovels);
-};
+    setNovels(novelsData.filter(n => !n.author || n.author === currentUser));
+    setMangas(mangasData.filter(m => !m.author || m.author === currentUser));
+  };
 
-useEffect(() => {
-   loadNovels();
-}, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-
-  const handleFileChange = (e) => setFile(e.target.files[0]);
+  // -------------------------------------------------
+  // UPLOAD IMAGE
+  // -------------------------------------------------
+  const handleFileChange = e => setFile(e.target.files[0]);
 
   const uploadImage = async () => {
     if (!file) return;
@@ -56,111 +69,190 @@ useEffect(() => {
     setUploading(false);
   };
 
-  const handleSelectChange = (id) => {
+  // -------------------------------------------------
+  // SELECT ITEM
+  // -------------------------------------------------
+  const handleSelect = (type, id) => {
     setSelectedId(id);
-    const novela = novels.find((n) => n._id === id);
+    setTab(type);
 
-    if (novela) {
-      setTitle(novela.title || "");
-      setDescription(novela.description || "");
-      setAuthor(novela.author || "");
-      setCover(novela.cover || "");
-      setChapters(novela.chapters?.length ? novela.chapters : [{ title: "", content: "" }]);
-      setGenres(novela.genres || []);
-      setGenresText((novela.genres || []).join(", "));
-    } else {
+    const list = type === "novels" ? novels : mangas;
+    const item = list.find(x => x._id === id);
+
+    setTitle(item?.title || "");
+    setDescription(item?.description || "");
+    setCover(item?.cover || item?.coverUrl || "");
+
+    if (type === "novels") {
+      setChapters(item?.chapters?.length ? item.chapters : [{ title: "", content: "" }]);
+      setGenres(item?.genres || []);
+      setGenresText((item?.genres || []).join(", "));
+      setMangaPages([]);
+    }
+
+    if (type === "mangas") {
+      setChapters([]);
       setGenres([]);
       setGenresText("");
+      setMangaPages(item?.pages || []);
     }
   };
 
-  const handleSubmit = async (e) => {
-  e.preventDefault();
-
-  const currentUser = sessionStorage.getItem("adminUser");
-
-  const payload = {
-    title,
-    description,
-    author: currentUser, // 👈 SIEMPRE GUARDA EL ID DEL USUARIO
-    cover,
-    chapters,
-    genres: genresText
-      .split(",")
-      .map((g) => g.trim())
-      .filter((g) => g.length > 0),
-  };
-
-  const url = selectedId ? `/api/novels/${selectedId}` : "/api/novels";
-  const method = selectedId ? "PUT" : "POST";
-
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (res.ok) {
-    alert(selectedId ? "Novela actualizada correctamente" : "Novela guardada correctamente");
-    resetForm();
-   await loadNovels();
-  } else {
-    const error = await res.json();
-    alert("Error: " + error.error);
-  }
-};
-
-
-  const handleDelete = async () => {
-    if (!selectedId) {
-      alert("Selecciona una novela para eliminar");
-      return;
-    }
-
-    if (!confirm("¿Seguro que deseas eliminar esta novela?")) return;
-
-    const res = await fetch(`/api/novels/${selectedId}`, {
-      method: "DELETE",
-    });
-
-    if (res.ok) {
-      alert("Novela eliminada correctamente");
-      resetForm();
-
-      await loadNovels();
-
-    } else {
-      const error = await res.json();
-      alert("Error al eliminar: " + error.error);
-    }
-  };
-
+  // -------------------------------------------------
+  // RESET FORM
+  // -------------------------------------------------
   const resetForm = () => {
     setSelectedId("");
     setTitle("");
     setDescription("");
-    setAuthor("");
     setCover("");
     setFile(null);
     setChapters([{ title: "", content: "" }]);
+    setGenres([]);
+    setGenresText("");
+    setMangaPages([]);
   };
 
-  const generateChapterAI = async () => {
-  const res = await fetch("/api/ai/generate-chapter", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      novelId: selectedId,   // 👈 AQUI LO MANDAMOS
+  // -------------------------------------------------
+  // SAVE NOVEL
+  // -------------------------------------------------
+  const saveNovel = async e => {
+    e.preventDefault();
+
+    const currentUser = sessionStorage.getItem("adminUser");
+
+    const payload = {
       title,
       description,
+      author: currentUser,
+      cover,
       chapters,
-    }),
-  });
+      genres: genresText
+        .split(",")
+        .map(g => g.trim())
+        .filter(g => g.length > 0),
+    };
 
+    const url = selectedId ? `/api/novels/${selectedId}` : "/api/novels";
+    const method = selectedId ? "PUT" : "POST";
 
-  const data = await res.json();
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  if (data.chapter) {
+    if (res.ok) {
+      alert("Novela guardada");
+      resetForm();
+      loadData();
+    } else {
+      alert("Error al guardar");
+    }
+  };
+
+  // -------------------------------------------------
+  // SAVE MANGA
+  // -------------------------------------------------
+  const saveManga = async e => {
+    e.preventDefault();
+
+    const currentUser = sessionStorage.getItem("adminUser");
+
+    const payload = {
+      title,
+      cover,
+      author: currentUser,
+      pages: mangaPages,
+    };
+
+    const url = selectedId ? `/api/mangas/${selectedId}` : "/api/mangas";
+    const method = selectedId ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      alert("Manga guardado");
+      resetForm();
+      loadData();
+    } else {
+      alert("Error guardando manga");
+    }
+  };
+
+  // -------------------------------------------------
+  // DELETE ITEM
+  // -------------------------------------------------
+  const deleteItem = async () => {
+    if (!selectedId) return alert("Selecciona uno");
+
+    if (!confirm("¿Eliminar definitivamente?")) return;
+
+    const endpoint = tab === "novels" ? "/api/novels" : "/api/mangas";
+
+    const res = await fetch(`${endpoint}/${selectedId}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      alert("Eliminado correctamente");
+      resetForm();
+      loadData();
+    }
+  };
+
+  // -------------------------------------------------
+  // GENERATE MANGA (AI)
+  // -------------------------------------------------
+  const generateManga = async () => {
+    if (!title.trim()) return alert("Pon un título");
+
+    const currentUser = sessionStorage.getItem("adminUser");
+
+    const res = await fetch("/api/ai/generate-manga", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description,
+        chapters,
+        author: currentUser,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (data.pages) {
+      alert("Manga generado");
+      setMangaPages(data.pages);
+    } else {
+      alert("Error generando manga");
+    }
+  };
+
+  // -------------------------------------------------
+  // GENERATE CHAPTER AI
+  // -------------------------------------------------
+  const generateChapterAI = async () => {
+    const res = await fetch("/api/ai/generate-chapter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        novelId: selectedId,
+        title,
+        description,
+        chapters,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!data.chapter) return alert("Error generando capítulo");
+
     const lines = data.chapter.split("\n").filter(l => l.trim() !== "");
 
     const newChapter = {
@@ -169,163 +261,262 @@ useEffect(() => {
     };
 
     setChapters([...chapters, newChapter]);
-    alert("Capítulo generado con IA");
-  } else {
-    alert("Error generando capítulo");
-  }
-};
+  };
 
-
+  // -------------------------------------------------
+  // UI
+  // -------------------------------------------------
   return (
     <div className="admin-container">
       <h1 className="admin-title">Panel de Administración</h1>
-      <div className="home-button-container">
-  <button
-    className="admin-button home"
-    onClick={() => (window.location.href = "/")}
-  >
-    ⬅ Volver al inicio
-  </button>
-</div>
 
-       <select
-        value={selectedId}
-        onChange={(e) => handleSelectChange(e.target.value)}
-        className="admin-select"
+      {/* Botón Inicio */}
+      <button
+        className="admin-button"
+        onClick={() => (window.location.href = "/")}
       >
-        <option value="">Nueva novela</option>
-        {novels.map((n) => (
-          <option key={n._id} value={n._id}>
-            {n.title}
-          </option>
-        ))}
-      </select>
+        ⬅ Inicio
+      </button>
 
-      <form onSubmit={handleSubmit} className="admin-form">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título" />
-        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descripción" />
-        {/* <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Autor" />  */}
-        {/* 🟢 Campo de categorías */}
-{/* 🟢 Campo de categorías mejorado con tags */}
-<div className="genres-section">
-  <label>Categorías:</label>
-
-  {/* Campo de entrada */}
-  <input
-    type="text"
-    value={genresText}
-    onChange={(e) => setGenresText(e.target.value)}
-    onKeyDown={(e) => {
-      if (e.key === "Enter" || e.key === ",") {
-        e.preventDefault();
-        const newGenre = e.target.value.trim().replace(",", "");
-        if (newGenre && !genres.includes(newGenre)) {
-          setGenres([...genres, newGenre]);
-        }
-        setGenresText("");
-      }
-    }}
-    placeholder="Escribe una categoría y presiona Enter o coma"
-  />
-
-  {/* Visualización de tags */}
-  <div className="genres-tags">
-    {genres.map((g, i) => (
-      <span key={i} className="genre-tag">
-        {g}
+      {/* TABS */}
+      <div className="tab-buttons">
         <button
-          type="button"
-          className="remove-tag"
-          onClick={() => setGenres(genres.filter((_, idx) => idx !== i))}
+          className={`admin-button ${tab === "novels" ? "tab-active" : ""}`}
+          onClick={() => {
+            resetForm();
+            setTab("novels");
+          }}
         >
-          ✕
+          📖 Novelas
         </button>
-      </span>
-    ))}
-  </div>
-</div>
 
-        <input type="file" onChange={handleFileChange} />
-        <div className="admin-buttons">
-          <button
-            type="button"
-            className="admin-button"
-            onClick={uploadImage}
-            disabled={uploading}
+        <button
+          className={`admin-button ${tab === "mangas" ? "tab-active" : ""}`}
+          onClick={() => {
+            resetForm();
+            setTab("mangas");
+          }}
+        >
+          🖤 Mangas
+        </button>
+      </div>
+
+      {/* ---------------------- NOVELS ---------------------- */}
+      {tab === "novels" && (
+        <div>
+          <h2>Gestión de Novelas</h2>
+
+          <select
+            value={selectedId}
+            onChange={e => handleSelect("novels", e.target.value)}
+            className="admin-select short-select"
           >
-            {uploading ? "Subiendo..." : "Subir portada"}
-          </button>
-        </div>
+            <option value="">Nueva novela</option>
+            {novels.map(n => (
+              <option key={n._id} value={n._id}>
+                {n.title}
+              </option>
+            ))}
+          </select>
 
-        {cover && (
-          <div className="admin-upload-preview">
-            <img src={cover} alt="Portada" />
-          </div>
-        )}
+          <form onSubmit={saveNovel} className="admin-form">
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título" />
 
-        <div className="chapter-section">
-          <h2>Capítulos</h2>
-          {chapters.map((ch, i) => (
-            <div key={i} className="chapter-card">
+            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Descripción" />
+
+            {/* Géneros */}
+            <div className="genres-section">
+              <label>Categorías:</label>
+
               <input
-                value={ch.title}
-                onChange={(e) => {
-                  const updated = [...chapters];
-                  updated[i].title = e.target.value;
-                  setChapters(updated);
+                type="text"
+                value={genresText}
+                onChange={e => setGenresText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    const newGenre = e.target.value.trim().replace(",", "");
+                    if (newGenre && !genres.includes(newGenre)) {
+                      setGenres([...genres, newGenre]);
+                    }
+                    setGenresText("");
+                  }
                 }}
-                placeholder="Título del capítulo"
+                placeholder="Escribe una categoría"
               />
-              <textarea
-                value={ch.content}
-                onChange={(e) => {
-                  const updated = [...chapters];
-                  updated[i].content = e.target.value;
-                  setChapters(updated);
-                }}
-                placeholder="Contenido"
-              />
+
+              <div className="genres-tags">
+                {genres.map((g, i) => (
+                  <span key={i} className="genre-tag">
+                    {g}
+                    <button
+                      type="button"
+                      className="remove-tag"
+                      onClick={() => setGenres(genres.filter((_, idx) => idx !== i))}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
 
-        <div className="admin-buttons">
-          <button
-            type="button"
-            className="admin-button"
-            onClick={generateChapterAI}
-          >
-            ✨ Generar Capítulo con IA
-          </button>   
-          <button
-            type="button"
-            className="admin-button"
-            onClick={() => setChapters([...chapters, { title: "", content: "" }])}
-          >
-            + Agregar Capítulo
-          </button>
-         <button
-          type="button"
-          className="admin-button"
-          onClick={() => setChapters(chapters.slice(0, -1))}
-          >
-          ➖ Quitar Capítulo
-          </button>
+            {/* Imagen */}
+            <input type="file" onChange={handleFileChange} />
 
-          <button type="submit" className="admin-button">
-            {selectedId ? "Actualizar novela" : "Guardar novela"}
-          </button>
-          {selectedId && (
-            <button
-              type="button"
-              className="admin-button delete"
-              onClick={handleDelete}
-            >
-              🗑 Eliminar novela
+            <button type="button" onClick={uploadImage}>
+              {uploading ? "Subiendo..." : "Subir portada"}
             </button>
-          )}
+
+            {cover && <img src={cover} alt="Portada" className="cover-preview" />}
+
+            {/* Capítulos */}
+            <h3>Capítulos</h3>
+            {chapters.map((ch, idx) => (
+              <div key={idx} className="chapter-card">
+                <input
+                  value={ch.title}
+                  onChange={e => {
+                    const updated = [...chapters];
+                    updated[idx].title = e.target.value;
+                    setChapters(updated);
+                  }}
+                  placeholder="Título del capítulo"
+                />
+
+                <textarea
+                  value={ch.content}
+                  onChange={e => {
+                    const updated = [...chapters];
+                    updated[idx].content = e.target.value;
+                    setChapters(updated);
+                  }}
+                  placeholder="Contenido"
+                />
+              </div>
+            ))}
+
+            {/* Botones */}
+            <div className="admin-buttons">
+              <button className="admin-button" type="button" onClick={() => setChapters([...chapters, { title: "", content: "" }])}>
+                + Capítulo
+              </button>
+
+              <button className="admin-button" type="button" onClick={() => setChapters(chapters.slice(0, -1))}>
+                - Quitar
+              </button>
+
+              <button className="admin-button" type="button" onClick={generateChapterAI}>
+                ✨ Generar Capítulo IA
+              </button>
+
+              <button className="admin-button" type="submit">{selectedId ? "Actualizar" : "Guardar"}</button>
+
+              {selectedId && (
+                <button className="admin-button delete" type="button" onClick={deleteItem}>
+                  🗑 Eliminar
+                </button>
+              )}
+            </div>
+          </form>
         </div>
-      </form>
+      )}
+
+      {/* ---------------------- MANGAS ---------------------- */}
+      {tab === "mangas" && (
+        <div>
+          <h2>Gestión de Mangas</h2>
+
+          <select
+            value={selectedId}
+            onChange={e => handleSelect("mangas", e.target.value)}
+            className="admin-select short-select"
+          >
+            <option value="">Nuevo manga</option>
+            {mangas.map(m => (
+              <option key={m._id} value={m._id}>
+                {m.title}
+              </option>
+            ))}
+          </select>
+
+          <form onSubmit={saveManga} className="admin-form">
+
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Título del manga"
+            />
+
+            <input type="file" onChange={handleFileChange} />
+
+            <button className="admin-button" type="button" onClick={uploadImage}>
+              {uploading ? "Subiendo..." : "Subir portada"}
+            </button>
+
+            {cover && <img src={cover} className="cover-preview" />}
+
+            {/* Botón generar manga */}
+            <button className="admin-button" type="button" onClick={generateManga}>
+              🖤 Generar Manga IA
+            </button>
+
+            {/* Agregar páginas */}
+            <button
+              className="admin-button"
+              type="button"
+              onClick={() =>
+                setMangaPages([
+                  ...mangaPages,
+                  {
+                    page: mangaPages.length + 1,
+                    panels: [{ image: "", dialogue: "" }],
+                  },
+                ])
+              }
+            >
+              ➕ Agregar Página
+            </button>
+
+            <h3>Páginas del Manga</h3>
+
+            {mangaPages.length === 0 && <p>No hay páginas.</p>}
+
+            {mangaPages.map((page, pageIndex) => (
+              <div key={pageIndex} className="manga-page">
+                <h4>Página {page.page}</h4>
+
+                {page.panels.map((panel, panelIndex) => (
+                  <div key={panelIndex} className="manga-panel">
+                    <img src={`data:image/png;base64,${panel.image}`} />
+
+                    <textarea
+                      value={panel.dialogue}
+                      onChange={e => {
+                        const updated = [...mangaPages];
+                        updated[pageIndex].panels[panelIndex].dialogue = e.target.value;
+                        setMangaPages(updated);
+                      }}
+                      placeholder="Diálogo"
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* Guardar / Eliminar */}
+            <div className="admin-buttons">
+              <button className="admin-button" type="submit">{selectedId ? "Actualizar" : "Guardar"}</button>
+
+              {selectedId && (
+                <button className="admin-button delete" type="button" onClick={deleteItem}>
+                  🗑 Eliminar Manga
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
