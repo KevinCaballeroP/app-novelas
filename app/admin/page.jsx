@@ -4,14 +4,14 @@ import { useState, useEffect } from "react";
 import "../../style/AdminPage.css";
 
 export default function AdminPage() {
-  // TAB SELECTION
+
   const [tab, setTab] = useState("novels");
 
-  // STORES
+
   const [novels, setNovels] = useState([]);
   const [mangas, setMangas] = useState([]);
 
-  // COMMON FORM STATES
+  
   const [selectedId, setSelectedId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -26,7 +26,7 @@ export default function AdminPage() {
 
   // MANGA
   const [mangaPages, setMangaPages] = useState([]);
-
+  const [mangaPrompt, setMangaPrompt] = useState("");
   // -------------------------------------------------
   // LOAD DATA
   // -------------------------------------------------
@@ -155,34 +155,46 @@ export default function AdminPage() {
   // SAVE MANGA
   // -------------------------------------------------
   const saveManga = async e => {
-    e.preventDefault();
+  e.preventDefault();
 
-    const currentUser = sessionStorage.getItem("adminUser");
+  const currentUser = sessionStorage.getItem("adminUser");
 
-    const payload = {
-      title,
-      cover,
-      author: currentUser,
-      pages: mangaPages,
-    };
+  const normalizedPages = mangaPages.map((page, pageIndex) => ({
+    pageNumber: page.page || page.pageNumber || pageIndex + 1,
+    panels: page.panels.map((panel, panelIndex) => ({
+      dialogue: panel.dialogue || "",
+      imagePrompt: panel.imagePrompt || "",
+      imageUrl: panel.image || panel.imageUrl || "",
+      order: panelIndex + 1,
+    })),
+  }));
 
-    const url = selectedId ? `/api/mangas/${selectedId}` : "/api/mangas";
-    const method = selectedId ? "PUT" : "POST";
-
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      alert("Manga guardado");
-      resetForm();
-      loadData();
-    } else {
-      alert("Error guardando manga");
-    }
+  const payload = {
+    title,
+    coverUrl: cover,
+    author: currentUser,
+    pages: normalizedPages,
   };
+
+  const url = selectedId ? `/api/mangas/${selectedId}` : "/api/mangas";
+  const method = selectedId ? "PUT" : "POST";
+
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    alert("Manga guardado");
+    resetForm();
+    loadData();
+  } else {
+    const err = await res.text();
+    console.error("❌ ERROR SAVE MANGA:", err);
+    alert("Error guardando manga");
+  }
+};
 
   // -------------------------------------------------
   // DELETE ITEM
@@ -208,31 +220,39 @@ export default function AdminPage() {
   // -------------------------------------------------
   // GENERATE MANGA (AI)
   // -------------------------------------------------
-  const generateManga = async () => {
-    if (!title.trim()) return alert("Pon un título");
+const generateManga = async () => {
+  if (!title.trim()) return alert("Pon un título");
+  if (!mangaPrompt.trim()) return alert("Describe el capítulo");
 
-    const currentUser = sessionStorage.getItem("adminUser");
+  const res = await fetch("/api/ai/generate-manga", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      prompt: mangaPrompt,
+      previousPages: mangaPages, // 🔥 AQUÍ VA
+    }),
+  });
 
-    const res = await fetch("/api/ai/generate-manga", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        description,
-        chapters,
-        author: currentUser,
-      }),
+  const data = await res.json();
+
+  if (data.pages) {
+    setMangaPages(prev => {
+      const offset = prev.length;
+
+      const newPages = data.pages.map((p, i) => ({
+        ...p,
+        page: offset + i + 1,
+      }));
+
+      return [...prev, ...newPages];
     });
+  } else {
+    alert("Error generando manga");
+  }
+};
 
-    const data = await res.json();
 
-    if (data.pages) {
-      alert("Manga generado");
-      setMangaPages(data.pages);
-    } else {
-      alert("Error generando manga");
-    }
-  };
 
   // -------------------------------------------------
   // GENERATE CHAPTER AI
@@ -449,6 +469,11 @@ export default function AdminPage() {
             />
 
             <input type="file" onChange={handleFileChange} />
+            <textarea
+  value={mangaPrompt}
+  onChange={e => setMangaPrompt(e.target.value)}
+  placeholder="Describe qué pasa en este capítulo, personajes, emociones, escenario..."
+/>
 
             <button className="admin-button" type="button" onClick={uploadImage}>
               {uploading ? "Subiendo..." : "Subir portada"}
@@ -478,6 +503,12 @@ export default function AdminPage() {
               ➕ Agregar Página
             </button>
 
+             <button className="admin-button" type="button"  onClick={() =>
+                setMangaPages(mangaPages.slice(0, -1))
+              }>
+                - Quitar
+              </button>
+
             <h3>Páginas del Manga</h3>
 
             {mangaPages.length === 0 && <p>No hay páginas.</p>}
@@ -488,7 +519,14 @@ export default function AdminPage() {
 
                 {page.panels.map((panel, panelIndex) => (
                   <div key={panelIndex} className="manga-panel">
-                    <img src={`data:image/png;base64,${panel.image}`} />
+                    {panel.image && (
+                        <img
+                          src={panel.image}
+                          alt="Panel de manga"
+                          className="manga-image"
+                        />
+                      )}
+
 
                     <textarea
                       value={panel.dialogue}

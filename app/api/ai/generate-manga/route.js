@@ -1,118 +1,98 @@
 import Groq from "groq-sdk";
 import { NextResponse } from "next/server";
 import { connectToDB } from "@/lib/mongodb";
+import { v2 as cloudinary } from "cloudinary";
 import fetch from "node-fetch";
-import FormData from "form-data";
 
 export const runtime = "nodejs";
 
-const client = new Groq({
-  apiKey: process.env.GROQ_API_KEY
+// ================= CLOUDINARY =================
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ======= IA PARA IMAGENES =======
-async function generateImage(prompt) {
-  // 1) Traducir el prompt a inglés antes de enviarlo a Stability
-  const translateRes = await client.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [
-      {
-        role: "user",
-        content: `
-Traduce este prompt de manga al INGLÉS. SOLO responde el texto traducido, sin explicaciones ni comillas.
-Prompt:
-${prompt}
-`
-      }
-    ],
-    temperature: 0,
-  });
+// ================= GROQ =================
+const client = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 
-  const englishPrompt = translateRes.choices[0].message.content.trim();
-
-  const formData = new FormData();
-  formData.append("prompt", englishPrompt);
-  formData.append("aspect_ratio", "1:1");
-  formData.append("output_format", "png");
-
-  const res = await fetch(
-    "https://api.stability.ai/v2beta/stable-image/generate/sd3",
+// ================= SUBIR BASE64 A CLOUDINARY =================
+async function uploadMangaImage(base64, page, panel) {
+  const upload = await cloudinary.uploader.upload(
+    `data:image/png;base64,${base64}`,
     {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.STABILITY_KEY}`,
-        Accept: "application/json",
-        ...formData.getHeaders()
-      },
-      body: formData,
+      folder: "mangas",
+      public_id: `page_${page}_panel_${panel}`,
     }
   );
 
-  const text = await res.text();
-
-  try {
-    const json = JSON.parse(text);
-
-    if (!json.image) {
-      console.error("STABILITY JSON ERROR:", json);
-      throw new Error("Stability no devolvió 'image'");
-    }
-
-    return json.image;
-
-  } catch (e) {
-    console.error("⚠️ Stability devolvió texto NO JSON:");
-    console.error(text);
-    throw new Error("Respuesta no válida de Stability AI (no es JSON).");
-  }
+  return upload.secure_url;
 }
 
+// ================= GENERAR IMAGEN =================
+async function generateImage(imagePrompt) {
+  const res = await fetch("http://localhost:8000/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: imagePrompt }),
+  });
 
+  if (!res.ok) {
+    throw new Error("FastAPI no respondió correctamente");
+  }
 
-// ========================================================================
+  const data = await res.json();
+  return data.image;
+}
 
+// ================= API PRINCIPAL =================
 export async function POST(req) {
   try {
     await connectToDB();
 
-    const { title, description, chapters } = await req.json();
+    // 🔥 NUEVO: recibimos previousPages
+    const { title, prompt, previousPages = [] } = await req.json();
 
-    const chapterText = chapters
-      .map((c, i) => `Capítulo ${i + 1}:\n${c.content}`)
-      .join("\n\n");
+    if (!prompt) {
+      throw new Error("Prompt de manga vacío");
+    }
 
-    // ===== 1) Generar GUIÓN MANGA =====
+    // ================= GUIÓN MANGA =================
     const scriptPrompt = `
-Eres un generador de JSON. 
-Tu única salida debe ser un JSON ESTRICTAMENTE válido.
+Eres un generador de manga en formato JSON.
+Devuelve SOLO JSON válido. Nada de texto adicional.
 
-Convierte la historia en páginas de manga.
-
-⚠️ REGLAS IMPORTANTES:
-- NO escribas comentarios, explicaciones, ni texto antes o después del JSON.
-- No uses "¡", ni introduzcas texto en español introductorio.
-- NO digas frases como "Aquí tienes".
-- SOLO responde con el JSON final.
-- Si no sabes qué poner, usa strings vacíos "".
-
-Formato obligatorio EXACTO:
-
+Formato EXACTO:
 {
   "pages": [
     {
-      "page": 1,
+      "page": number,
       "panels": [
         {
           "dialogue": "texto breve",
-          "imagePrompt": "descripción de la escena"
+          "imagePrompt": "descripción visual detallada"
         }
       ]
     }
   ]
 }
 
-Historia:
-${chapterText}
+CONTEXTO PREVIO (NO repetir escenas):
+${previousPages.length ? JSON.stringify(previousPages, null, 2) : "No hay páginas previas"}
+
+REGLAS IMPORTANTES:
+- CONTINUAR la historia desde la última página existente
+- NO reiniciar la historia
+- NO repetir escenas, encuadres ni eventos
+- 1 a 3 paneles por página
+- diálogos cortos
+- NO incluir texto dentro de la imagen
+- estilo manga oscuro, cultivadores, fantasía oriental
+
+Nueva parte de la historia:
+${prompt}
 `;
 
     const scriptRes = await client.chat.completions.create({
@@ -121,40 +101,66 @@ ${chapterText}
       temperature: 0.6,
     });
 
-    // ============ ⬇️ NUEVO BLOQUE QUE DEBES PONER AQUÍ ⬇️ ============
-
     let script = scriptRes.choices[0].message.content.trim();
-
-    // Quitar texto basura ANTES del JSON
-    script = script.replace(/^[^{]+/, "");
-
-    // Quitar texto basura DESPUÉS del JSON
-    script = script.replace(/[^}]+$/, "");
+    script = script.replace(/^[^{]+/, "").replace(/[^}]+$/, "");
 
     let pages;
     try {
-      const json = JSON.parse(script);
-      pages = json.pages;
+      pages = JSON.parse(script).pages;
     } catch (e) {
-      console.log("JSON RAW FROM GROQ:", script);
-      throw new Error("La IA no regresó JSON válido");
+      console.error("JSON inválido:", script);
+      throw new Error("La IA no devolvió JSON válido");
     }
 
-    // ============ ⬆️ FIN DEL BLOQUE NUEVO ⬆️ ============
-
-
-    // ===== 2) GENERAR IMAGENES POR VIÑETA =====
+    // ================= IMÁGENES + CLOUDINARY =================
     for (const page of pages) {
+      let panelIndex = 1;
+
       for (const panel of page.panels) {
-        const img = await generateImage(panel.imagePrompt);
-        panel.image = img;
+
+        // 🔥 NUEVO: variación visual forzada
+        const angles = [
+          "close-up",
+          "wide shot",
+          "low angle",
+          "high angle",
+          "dynamic perspective"
+        ];
+        const angle = angles[Math.floor(Math.random() * angles.length)];
+
+        const finalPrompt = `
+${panel.imagePrompt},
+${angle},
+cinematic lighting,
+dramatic shadows,
+unique composition,
+no repeated scenes,
+manga cultivation style
+`;
+
+        const base64 = await generateImage(finalPrompt);
+
+        const imageUrl = await uploadMangaImage(
+          base64,
+          page.page,
+          panelIndex
+        );
+
+        panel.image = imageUrl;
+        panelIndex++;
       }
     }
 
-    return NextResponse.json({ pages });
+    return NextResponse.json({
+      title,
+      pages,
+    });
 
   } catch (err) {
-    console.error("AI MANGA ERROR:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("❌ MANGA IA ERROR:", err);
+    return NextResponse.json(
+      { error: err.message },
+      { status: 500 }
+    );
   }
 }
