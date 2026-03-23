@@ -34,33 +34,36 @@ export default function MangaReader() {
         )}
       </div>
 
-      {/* CONTENIDO */}
-      <div className="manga-pages">
-        {manga.pages.map(page => (
-          <div key={page.pageNumber} className="manga-page">
-            <h3 className="page-number">Página {page.pageNumber}</h3>
+     {/* CONTENIDO */}
+<div className="manga-pages">
+  {manga.pages.map(page => (
+    <div key={page.pageNumber} className="manga-page">
+      <h3 className="page-number">Página {page.pageNumber}</h3>
 
-            {page.panels.map((panel, i) => (
-             <div className="manga-panel">
-  <div className="panel-image-wrapper">
-    <img
-      src={panel.imageUrl}
-      className="panel-img"
-      alt="Panel manga"
-    />
+      {page.panels.map((panel, i) => (
+        <div
+          key={`${page.pageNumber}-${i}`}
+          className="manga-panel"
+        >
+          <div className="panel-image-wrapper">
+            <img
+              src={panel.imageUrl}
+              className="panel-img"
+              alt="Panel manga"
+            />
 
-   {panel.dialogue && (
-  <div className={`speech-bubble pos-${i % 3}`}>
-    {panel.dialogue}
-  </div>
-)}
-  </div>
+            {panel.dialogue && (
+              <div className={`speech-bubble pos-${i % 3}`}>
+                {panel.dialogue}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  ))}
 </div>
 
-            ))}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
