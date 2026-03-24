@@ -17,13 +17,13 @@ function getFfmpegPath() {
   return process.env.FFMPEG_PATH || "ffmpeg";
 }
 
-async function downloadImage(url, outputPath) {
+async function downloadFile(url, outputPath) {
   if (!url) {
-    throw new Error("La imagen está vacía");
+    throw new Error("El archivo está vacío");
   }
 
-  // Soporte para base64
-  if (url.startsWith("data:image/")) {
+  // Soporte para imágenes/audio en base64
+  if (url.startsWith("data:")) {
     const base64Data = url.split(",")[1];
     fs.writeFileSync(outputPath, Buffer.from(base64Data, "base64"));
     return;
@@ -44,7 +44,7 @@ async function downloadImage(url, outputPath) {
       clearTimeout(timeout);
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} al descargar imagen`);
+        throw new Error(`HTTP ${res.status} al descargar archivo`);
       }
 
       const arrayBuffer = await res.arrayBuffer();
@@ -52,11 +52,13 @@ async function downloadImage(url, outputPath) {
       return;
     } catch (error) {
       lastError = error;
-      console.error(`❌ Intento ${attempt} falló descargando imagen:`, url, error.message);
+      console.error(`❌ Intento ${attempt} falló descargando archivo:`, url, error.message);
     }
   }
 
-  throw new Error(`No se pudo descargar imagen después de 3 intentos: ${url}. ${lastError?.message || ""}`);
+  throw new Error(
+    `No se pudo descargar archivo después de 3 intentos: ${url}. ${lastError?.message || ""}`
+  );
 }
 
 function cleanText(text = "") {
@@ -72,7 +74,7 @@ function escapePathForFFmpeg(filePath) {
 
 export async function POST(req) {
   try {
-    const { title, pages = [], format = "tiktok" } = await req.json();
+    const { title, pages = [], format = "tiktok", audioUrl = "" } = await req.json();
 
     if (!pages.length) {
       return NextResponse.json(
@@ -99,7 +101,10 @@ export async function POST(req) {
         const panel = panels[panelIndex];
         const imageUrl = panel.image || panel.imageUrl || "";
 
-        if (!imageUrl) continue;
+        if (!imageUrl) {
+          console.warn(`⚠️ Panel sin imagen en página ${pageIndex + 1}, panel ${panelIndex + 1}`);
+          continue;
+        }
 
         globalIndex++;
 
@@ -107,7 +112,8 @@ export async function POST(req) {
         const clipPath = path.join(tempDir, `clip_${globalIndex}.mp4`);
         const textPath = path.join(tempDir, `caption_${globalIndex}.txt`);
 
-        await downloadImage(imageUrl, imagePath);
+        console.log("🖼 Descargando imagen:", imageUrl);
+        await downloadFile(imageUrl, imagePath);
 
         const caption = cleanText(panel.dialogue || "");
         fs.writeFileSync(textPath, caption, "utf8");
@@ -118,7 +124,7 @@ export async function POST(req) {
         const vfParts = [
           `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
           `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
-          `zoompan=z='min(zoom+0.0008,1.08)':d=${duration * 30}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`
+          `zoompan=z='min(zoom+0.0008,1.08)':d=${duration * 30}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
         ];
 
         if (caption) {
@@ -157,7 +163,9 @@ export async function POST(req) {
         if (result.status !== 0) {
           console.error("❌ ffmpeg stderr:", result.stderr);
           console.error("❌ ffmpeg stdout:", result.stdout);
-          throw new Error(`ffmpeg falló al crear clip ${globalIndex}: ${result.stderr || "sin stderr"}`);
+          throw new Error(
+            `ffmpeg falló al crear clip ${globalIndex}: ${result.stderr || "sin stderr"}`
+          );
         }
 
         clipPaths.push(clipPath);
@@ -199,16 +207,63 @@ export async function POST(req) {
 
     if (concatResult.error) {
       console.error("❌ Error lanzando ffmpeg concat:", concatResult.error);
-      throw new Error(`No se pudo ejecutar ffmpeg al unir clips: ${concatResult.error.message}`);
+      throw new Error(
+        `No se pudo ejecutar ffmpeg al unir clips: ${concatResult.error.message}`
+      );
     }
 
     if (concatResult.status !== 0) {
       console.error("❌ concat stderr:", concatResult.stderr);
       console.error("❌ concat stdout:", concatResult.stdout);
-      throw new Error(`ffmpeg falló al unir clips: ${concatResult.stderr || "sin stderr"}`);
+      throw new Error(
+        `ffmpeg falló al unir clips: ${concatResult.stderr || "sin stderr"}`
+      );
     }
 
-    const uploadRes = await cloudinary.uploader.upload(finalVideoPath, {
+    const videoWithAudioPath = path.join(tempDir, "final_with_audio.mp4");
+
+    if (audioUrl) {
+      const audioPath = path.join(tempDir, "voice.mp3");
+
+      console.log("🎵 Descargando audio:", audioUrl);
+      await downloadFile(audioUrl, audioPath);
+
+      const mergeResult = spawnSync(
+        ffmpegPath,
+        [
+          "-y",
+          "-i", finalVideoPath,
+          "-i", audioPath,
+          "-c:v", "copy",
+          "-c:a", "aac",
+          "-shortest",
+          videoWithAudioPath,
+        ],
+        {
+          encoding: "utf8",
+          shell: false,
+        }
+      );
+
+      if (mergeResult.error) {
+        console.error("❌ Error lanzando ffmpeg merge:", mergeResult.error);
+        throw new Error(
+          `No se pudo ejecutar ffmpeg al mezclar audio: ${mergeResult.error.message}`
+        );
+      }
+
+      if (mergeResult.status !== 0) {
+        console.error("❌ merge stderr:", mergeResult.stderr);
+        console.error("❌ merge stdout:", mergeResult.stdout);
+        throw new Error(
+          `Error mezclando audio: ${mergeResult.stderr || "sin stderr"}`
+        );
+      }
+    }
+
+    const outputToUpload = audioUrl ? videoWithAudioPath : finalVideoPath;
+
+    const uploadRes = await cloudinary.uploader.upload(outputToUpload, {
       resource_type: "video",
       folder: "manga_videos",
       public_id: `${title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,

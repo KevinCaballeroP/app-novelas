@@ -30,6 +30,8 @@ export default function AdminPage() {
   const [videoFormat, setVideoFormat] = useState("tiktok");
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState("");
+  const [generatingVoice, setGeneratingVoice] = useState(false);
+const [generatedAudioUrl, setGeneratedAudioUrl] = useState("");
   // -------------------------------------------------
   // LOAD DATA
   // -------------------------------------------------
@@ -285,8 +287,8 @@ const generateManga = async () => {
 
     setChapters([...chapters, newChapter]);
   };
-
-  const generateVideo = async () => {
+//generar video//
+const generateVideo = async () => {
   if (!title.trim()) return alert("El manga necesita título");
   if (!mangaPages.length) return alert("Primero genera o carga páginas del manga");
 
@@ -301,8 +303,9 @@ const generateManga = async () => {
       },
       body: JSON.stringify({
         title,
-        format: videoFormat, // "tiktok" o "youtube"
+        format: videoFormat,
         pages: mangaPages,
+        audioUrl: generatedAudioUrl || "",
       }),
     });
 
@@ -321,7 +324,79 @@ const generateManga = async () => {
     setGeneratingVideo(false);
   }
 };
+//generar voz//
+const generateVoice = async () => {
+  if (!title.trim()) return alert("El manga necesita título");
+  if (!mangaPages.length) return alert("Primero genera o carga páginas del manga");
 
+  setGeneratingVoice(true);
+  setGeneratedAudioUrl("");
+
+  try {
+    const res = await fetch("/api/ai/generate-voice", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        pages: mangaPages,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Error generando voz");
+    }
+
+    setGeneratedAudioUrl(data.audioUrl || "");
+    alert("Voz generada correctamente");
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "No se pudo generar la voz");
+  } finally {
+    setGeneratingVoice(false);
+  }
+};
+//descargar video//
+const downloadVideo = async () => {
+  if (!generatedVideoUrl) return alert("Primero genera el video");
+
+  try {
+    const response = await fetch(generatedVideoUrl);
+    const blob = await response.blob();
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+
+    const safeTitle = (title || "manga_video")
+      .replace(/[^\w\-]+/g, "_")
+      .toLowerCase();
+
+    a.download = `${safeTitle}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo descargar el video");
+  }
+};
+
+const copyVideoLink = async () => {
+  if (!generatedVideoUrl) return alert("Primero genera el video");
+
+  try {
+    await navigator.clipboard.writeText(generatedVideoUrl);
+    alert("Enlace del video copiado");
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo copiar el enlace");
+  }
+};
   // -------------------------------------------------
   // UI
   // -------------------------------------------------
@@ -616,6 +691,40 @@ const generateManga = async () => {
   </div>
 )}
 
+<div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "16px" }}>
+  <button
+    className="admin-button"
+    type="button"
+    onClick={generateVoice}
+    disabled={generatingVoice}
+  >
+    {generatingVoice ? "🎙 Generando voz..." : "🎙 Generar Voz"}
+  </button>
+
+  <button
+    className="admin-button"
+    type="button"
+    onClick={downloadVideo}
+    disabled={!generatedVideoUrl}
+  >
+    ⬇ Descargar Video
+  </button>
+
+  <button
+    className="admin-button"
+    type="button"
+    onClick={copyVideoLink}
+    disabled={!generatedVideoUrl}
+  >
+    📋 Copiar Enlace
+  </button>
+</div>
+
+{generatedAudioUrl && (
+  <div style={{ marginTop: "16px" }}>
+    <audio src={generatedAudioUrl} controls style={{ width: "100%", maxWidth: "420px" }} />
+  </div>
+)}
             {/* Guardar / Eliminar */}
             <div className="admin-buttons">
               <button className="admin-button" type="submit">{selectedId ? "Actualizar" : "Guardar"}</button>
