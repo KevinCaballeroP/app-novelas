@@ -22,7 +22,6 @@ async function downloadFile(url, outputPath) {
     throw new Error("El archivo está vacío");
   }
 
-  // Soporte para imágenes/audio en base64
   if (url.startsWith("data:")) {
     const base64Data = url.split(",")[1];
     fs.writeFileSync(outputPath, Buffer.from(base64Data, "base64"));
@@ -72,6 +71,38 @@ function escapePathForFFmpeg(filePath) {
   return filePath.replace(/\\/g, "/").replace(/:/g, "\\:");
 }
 
+function getAudioDuration(ffmpegPath, audioPath) {
+  let ffprobePath = "ffprobe";
+
+  if (ffmpegPath.toLowerCase().endsWith("ffmpeg.exe")) {
+    ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+  }
+
+  const result = spawnSync(
+    ffprobePath,
+    [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      audioPath,
+    ],
+    {
+      encoding: "utf8",
+      shell: false,
+    }
+  );
+
+  if (result.error) {
+    throw new Error(`No se pudo ejecutar ffprobe: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`No se pudo obtener duración del audio: ${result.stderr || "sin stderr"}`);
+  }
+
+  return parseFloat(result.stdout.trim());
+}
+
 export async function POST(req) {
   try {
     const { title, pages = [], format = "tiktok", audioUrl = "" } = await req.json();
@@ -90,86 +121,126 @@ export async function POST(req) {
     const width = isTikTok ? 1080 : 1920;
     const height = isTikTok ? 1920 : 1080;
 
+    let audioDuration = 0;
+    let audioPath = "";
+
+    // Recolectar paneles válidos y medir texto total
+    const panelData = [];
+    let totalChars = 0;
+
+    for (const page of pages) {
+      const panels = Array.isArray(page.panels) ? page.panels : [];
+
+      for (const panel of panels) {
+        const imageUrl = panel.image || panel.imageUrl || "";
+        if (!imageUrl) continue;
+
+        const caption = cleanText(panel.dialogue || "");
+        const charCount = Math.max(caption.length, 1);
+
+        panelData.push({
+          imageUrl,
+          caption,
+          charCount,
+        });
+
+        totalChars += charCount;
+      }
+    }
+
+    if (!panelData.length) {
+      return NextResponse.json(
+        { error: "No hay paneles con imagen para generar video" },
+        { status: 400 }
+      );
+    }
+
+    if (audioUrl) {
+      audioPath = path.join(tempDir, "voice.mp3");
+
+      console.log("🎵 Descargando audio:", audioUrl);
+      await downloadFile(audioUrl, audioPath);
+
+      audioDuration = getAudioDuration(ffmpegPath, audioPath);
+      console.log("⏱ Duración audio:", audioDuration);
+    }
+
     const clipPaths = [];
     let globalIndex = 0;
 
-    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
-      const page = pages[pageIndex];
-      const panels = Array.isArray(page.panels) ? page.panels : [];
+    for (let i = 0; i < panelData.length; i++) {
+      const { imageUrl, caption, charCount } = panelData[i];
 
-      for (let panelIndex = 0; panelIndex < panels.length; panelIndex++) {
-        const panel = panels[panelIndex];
-        const imageUrl = panel.image || panel.imageUrl || "";
+      globalIndex++;
 
-        if (!imageUrl) {
-          console.warn(`⚠️ Panel sin imagen en página ${pageIndex + 1}, panel ${panelIndex + 1}`);
-          continue;
-        }
+      const imagePath = path.join(tempDir, `img_${globalIndex}.png`);
+      const clipPath = path.join(tempDir, `clip_${globalIndex}.mp4`);
+      const textPath = path.join(tempDir, `caption_${globalIndex}.txt`);
 
-        globalIndex++;
+      console.log("🖼 Descargando imagen:", imageUrl);
+      await downloadFile(imageUrl, imagePath);
 
-        const imagePath = path.join(tempDir, `img_${globalIndex}.png`);
-        const clipPath = path.join(tempDir, `clip_${globalIndex}.mp4`);
-        const textPath = path.join(tempDir, `caption_${globalIndex}.txt`);
+      fs.writeFileSync(textPath, caption, "utf8");
 
-        console.log("🖼 Descargando imagen:", imageUrl);
-        await downloadFile(imageUrl, imagePath);
+      let duration = 3;
 
-        const caption = cleanText(panel.dialogue || "");
-        fs.writeFileSync(textPath, caption, "utf8");
-
-        const duration = caption.length > 90 ? 5 : 3;
-        const escapedTextPath = escapePathForFFmpeg(textPath);
-
-        const vfParts = [
-          `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
-          `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
-          `zoompan=z='min(zoom+0.0008,1.08)':d=${duration * 30}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-        ];
-
-        if (caption) {
-          vfParts.push(
-            `drawtext=textfile='${escapedTextPath}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=h-220:box=1:boxcolor=black@0.55:boxborderw=20`
-          );
-        }
-
-        const vf = vfParts.join(",");
-
-        const result = spawnSync(
-          ffmpegPath,
-          [
-            "-y",
-            "-loop", "1",
-            "-i", imagePath,
-            "-vf", vf,
-            "-t", String(duration),
-            "-r", "30",
-            "-pix_fmt", "yuv420p",
-            clipPath,
-          ],
-          {
-            encoding: "utf8",
-            shell: false,
-          }
-        );
-
-        if (result.error) {
-          console.error("❌ Error lanzando ffmpeg:", result.error);
-          throw new Error(
-            `No se pudo ejecutar ffmpeg. Revisa FFMPEG_PATH o el PATH del sistema. ${result.error.message}`
-          );
-        }
-
-        if (result.status !== 0) {
-          console.error("❌ ffmpeg stderr:", result.stderr);
-          console.error("❌ ffmpeg stdout:", result.stdout);
-          throw new Error(
-            `ffmpeg falló al crear clip ${globalIndex}: ${result.stderr || "sin stderr"}`
-          );
-        }
-
-        clipPaths.push(clipPath);
+      if (audioDuration > 0 && totalChars > 0) {
+        duration = audioDuration * (charCount / totalChars);
       }
+
+      // mínimo para que no pase demasiado rápido
+      duration = Math.max(duration, 1.8);
+
+      const escapedTextPath = escapePathForFFmpeg(textPath);
+
+      const vfParts = [
+        `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+        `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
+        `zoompan=z='min(zoom+0.0008,1.08)':d=${Math.round(duration * 30)}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+      ];
+
+      if (caption) {
+        vfParts.push(
+          `drawtext=textfile='${escapedTextPath}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=h-220:box=1:boxcolor=black@0.55:boxborderw=20`
+        );
+      }
+
+      const vf = vfParts.join(",");
+
+      const result = spawnSync(
+        ffmpegPath,
+        [
+          "-y",
+          "-loop", "1",
+          "-i", imagePath,
+          "-vf", vf,
+          "-t", String(duration),
+          "-r", "30",
+          "-pix_fmt", "yuv420p",
+          clipPath,
+        ],
+        {
+          encoding: "utf8",
+          shell: false,
+        }
+      );
+
+      if (result.error) {
+        console.error("❌ Error lanzando ffmpeg:", result.error);
+        throw new Error(
+          `No se pudo ejecutar ffmpeg. Revisa FFMPEG_PATH o el PATH del sistema. ${result.error.message}`
+        );
+      }
+
+      if (result.status !== 0) {
+        console.error("❌ ffmpeg stderr:", result.stderr);
+        console.error("❌ ffmpeg stdout:", result.stdout);
+        throw new Error(
+          `ffmpeg falló al crear clip ${globalIndex}: ${result.stderr || "sin stderr"}`
+        );
+      }
+
+      clipPaths.push(clipPath);
     }
 
     if (!clipPaths.length) {
@@ -222,12 +293,7 @@ export async function POST(req) {
 
     const videoWithAudioPath = path.join(tempDir, "final_with_audio.mp4");
 
-    if (audioUrl) {
-      const audioPath = path.join(tempDir, "voice.mp3");
-
-      console.log("🎵 Descargando audio:", audioUrl);
-      await downloadFile(audioUrl, audioPath);
-
+    if (audioUrl && audioPath) {
       const mergeResult = spawnSync(
         ffmpegPath,
         [
