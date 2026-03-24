@@ -27,6 +27,9 @@ export default function AdminPage() {
   // MANGA
   const [mangaPages, setMangaPages] = useState([]);
   const [mangaPrompt, setMangaPrompt] = useState("");
+  const [videoFormat, setVideoFormat] = useState("tiktok");
+  const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState("");
   // -------------------------------------------------
   // LOAD DATA
   // -------------------------------------------------
@@ -283,6 +286,42 @@ const generateManga = async () => {
     setChapters([...chapters, newChapter]);
   };
 
+  const generateVideo = async () => {
+  if (!title.trim()) return alert("El manga necesita título");
+  if (!mangaPages.length) return alert("Primero genera o carga páginas del manga");
+
+  setGeneratingVideo(true);
+  setGeneratedVideoUrl("");
+
+  try {
+    const res = await fetch("/api/ai/generate-video", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        format: videoFormat, // "tiktok" o "youtube"
+        pages: mangaPages,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Error generando video");
+    }
+
+    setGeneratedVideoUrl(data.videoUrl);
+    alert("Video generado correctamente");
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "No se pudo generar el video");
+  } finally {
+    setGeneratingVideo(false);
+  }
+};
+
   // -------------------------------------------------
   // UI
   // -------------------------------------------------
@@ -519,13 +558,13 @@ const generateManga = async () => {
 
                 {page.panels.map((panel, panelIndex) => (
                   <div key={panelIndex} className="manga-panel">
-                    {panel.image && (
-                        <img
-                          src={panel.image}
-                          alt="Panel de manga"
-                          className="manga-image"
-                        />
-                      )}
+                    {(panel.image || panel.imageUrl) && (
+                    <img
+                      src={panel.image || panel.imageUrl}
+                      alt="Panel de manga"
+                      className="manga-image"
+                    />
+                  )}
 
 
                     <textarea
@@ -541,6 +580,41 @@ const generateManga = async () => {
                 ))}
               </div>
             ))}
+            {/* 🎬 GENERAR VIDEO */}
+<div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "16px" }}>
+  <select
+    value={videoFormat}
+    onChange={(e) => setVideoFormat(e.target.value)}
+    className="admin-select short-select"
+  >
+    <option value="tiktok">TikTok / Shorts (9:16)</option>
+    <option value="youtube">YouTube horizontal (16:9)</option>
+  </select>
+
+  <button
+    className="admin-button"
+    type="button"
+    onClick={generateVideo}
+    disabled={generatingVideo}
+  >
+    {generatingVideo ? "🎬 Generando video..." : "🎬 Generar Video"}
+  </button>
+</div>
+
+{generatedVideoUrl && (
+  <div style={{ marginTop: "16px" }}>
+    <video
+      src={generatedVideoUrl}
+      controls
+      style={{ width: "100%", maxWidth: "420px", borderRadius: "12px" }}
+    />
+    <div style={{ marginTop: "8px" }}>
+      <a href={generatedVideoUrl} target="_blank" rel="noreferrer">
+        Ver video generado
+      </a>
+    </div>
+  </div>
+)}
 
             {/* Guardar / Eliminar */}
             <div className="admin-buttons">
