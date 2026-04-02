@@ -9,49 +9,73 @@ cloudinary.config({
   api_secret: process.env.CLOUD_SECRET,
 });
 
-export async function POST(req, { params }) {
-  await connectToDB();
-  const mangaId = params.id;
-  const body = await req.json();
+export async function POST(req, context) {
+  try {
+    await connectToDB();
 
-  // body: { pageNumber, panels: [{ dialogue, imageB64, imagePrompt, order }] }
+    const { id: mangaId } = await context.params;
+    const body = await req.json();
+    const chapterNumber = Number(body.chapterNumber || 1);
 
-  const uploadedPanels = [];
+    const uploadedPanels = [];
 
-  for (const panel of body.panels) {
-    let imageUrl = "";
+    for (const panel of body.panels || []) {
+      let imageUrl = panel.imageUrl || "";
 
-    if (panel.imageB64) {
-      const uploaded = await cloudinary.uploader.upload(
-        `data:image/png;base64,${panel.imageB64}`,
-        {
-          folder: "manga_panels",
-          transformation: [{ quality: "auto" }],
-        }
-      );
-      imageUrl = uploaded.secure_url;
+      if (panel.imageB64) {
+        const uploaded = await cloudinary.uploader.upload(
+          `data:image/png;base64,${panel.imageB64}`,
+          {
+            folder: "manga_panels",
+            transformation: [{ quality: "auto" }],
+          }
+        );
+        imageUrl = uploaded.secure_url;
+      }
+
+      uploadedPanels.push({
+        type: panel.type || "narration",
+        dialogue: panel.dialogue || "",
+        imagePrompt: panel.imagePrompt || "",
+        imageUrl,
+        imageB64: "",
+        order: panel.order,
+      });
     }
 
-    uploadedPanels.push({
-      dialogue: panel.dialogue,
-      imagePrompt: panel.imagePrompt,
-      imageUrl,
-      order: panel.order,
+    const manga = await Manga.findById(mangaId);
+
+    if (!manga) {
+      return NextResponse.json({ error: "Manga no encontrado" }, { status: 404 });
+    }
+
+    if (!Array.isArray(manga.chapters)) {
+      manga.chapters = [];
+    }
+
+    let chapter = manga.chapters.find((c) => c.chapterNumber === chapterNumber);
+
+    if (!chapter) {
+      manga.chapters.push({
+        chapterNumber,
+        title: `Capítulo ${chapterNumber}`,
+        prompt: "",
+        pages: [],
+      });
+      chapter = manga.chapters.find((c) => c.chapterNumber === chapterNumber);
+    }
+
+    chapter.pages.push({
+      pageNumber: body.pageNumber,
+      panels: uploadedPanels,
+      layout: body.layout || "standard",
     });
+
+    await manga.save();
+
+    return NextResponse.json({ ok: true, manga });
+  } catch (error) {
+    console.error("POST /api/mangas/[id]/pages error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  const update = await Manga.findByIdAndUpdate(
-    mangaId,
-    {
-      $push: {
-        pages: {
-          pageNumber: body.pageNumber,
-          panels: uploadedPanels,
-        },
-      },
-    },
-    { new: true }
-  );
-
-  return NextResponse.json({ ok: true, manga: update });
 }
