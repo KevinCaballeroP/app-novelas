@@ -26,11 +26,21 @@ export default function AdminPage() {
   const [selectedChapterIndex, setSelectedChapterIndex] = useState(0);
   const [chapterTitle, setChapterTitle] = useState("");
   const [mangaPrompt, setMangaPrompt] = useState("");
-  const [videoFormat, setVideoFormat] = useState("tiktok");
+  const [contentProfile, setContentProfile] = useState("tiktok");
+
   const [generatingVideo, setGeneratingVideo] = useState(false);
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState("");
-  const [generatingVoice, setGeneratingVoice] = useState(false);
-  const [generatedAudioUrl, setGeneratedAudioUrl] = useState("");
+
+  const [selectedFormats, setSelectedFormats] = useState([
+    "tiktok",
+    "shorts",
+    "youtube",
+  ]);
+
+  const [generatedVideos, setGeneratedVideos] = useState({
+    tiktok: "",
+    shorts: "",
+    youtube: "",
+  });
 
   const currentChapter = useMemo(() => {
     return mangaChapters[selectedChapterIndex] || null;
@@ -89,47 +99,47 @@ export default function AdminPage() {
   // -------------------------------------------------
   // HELPERS MANGA
   // -------------------------------------------------
-const normalizeLegacyPagesToChapter = (item) => {
-  if (item?.chapters?.length) {
-    return item.chapters.map((chapter, idx) => ({
-      chapterNumber: chapter.chapterNumber || idx + 1,
-      title: chapter.title || `Capítulo ${idx + 1}`,
-      prompt: chapter.prompt || "",
-      pages: (chapter.pages || []).map((page, pageIndex) => ({
-        pageNumber: page.pageNumber || page.page || pageIndex + 1,
-      panels: (page.panels || []).map((panel, panelIndex) => ({
-  type: panel.type || "narration",
-  dialogue: panel.dialogue || "",
-  imagePrompt: panel.imagePrompt || "",
-  imageUrl: panel.imageUrl || panel.image || "",
-  order: panel.order || panelIndex + 1,
-})),
-      })),
-    }));
-  }
-
-  if (item?.pages?.length) {
-    return [
-      {
-        chapterNumber: 1,
-        title: "Capítulo 1",
-        prompt: "",
-        pages: item.pages.map((page, pageIndex) => ({
+  const normalizeLegacyPagesToChapter = (item) => {
+    if (item?.chapters?.length) {
+      return item.chapters.map((chapter, idx) => ({
+        chapterNumber: chapter.chapterNumber || idx + 1,
+        title: chapter.title || `Capítulo ${idx + 1}`,
+        prompt: chapter.prompt || "",
+        pages: (chapter.pages || []).map((page, pageIndex) => ({
           pageNumber: page.pageNumber || page.page || pageIndex + 1,
           panels: (page.panels || []).map((panel, panelIndex) => ({
-  type: panel.type || "narration",
-  dialogue: panel.dialogue || "",
-  imagePrompt: panel.imagePrompt || "",
-  imageUrl: panel.imageUrl || panel.image || "",
-  order: panel.order || panelIndex + 1,
-}))
+            type: panel.type || "narration",
+            dialogue: panel.dialogue || "",
+            imagePrompt: panel.imagePrompt || "",
+            imageUrl: panel.imageUrl || panel.image || "",
+            order: panel.order || panelIndex + 1,
+          })),
         })),
-      },
-    ];
-  }
+      }));
+    }
 
-  return [];
-};
+    if (item?.pages?.length) {
+      return [
+        {
+          chapterNumber: 1,
+          title: "Capítulo 1",
+          prompt: "",
+          pages: item.pages.map((page, pageIndex) => ({
+            pageNumber: page.pageNumber || page.page || pageIndex + 1,
+            panels: (page.panels || []).map((panel, panelIndex) => ({
+              type: panel.type || "narration",
+              dialogue: panel.dialogue || "",
+              imagePrompt: panel.imagePrompt || "",
+              imageUrl: panel.imageUrl || panel.image || "",
+              order: panel.order || panelIndex + 1,
+            })),
+          })),
+        },
+      ];
+    }
+
+    return [];
+  };
 
   const createNewChapter = () => {
     const nextNumber = mangaChapters.length + 1;
@@ -143,8 +153,12 @@ const normalizeLegacyPagesToChapter = (item) => {
 
     setMangaChapters((prev) => [...prev, newChapter]);
     setSelectedChapterIndex(mangaChapters.length);
-    setGeneratedAudioUrl("");
-    setGeneratedVideoUrl("");
+
+    setGeneratedVideos({
+      tiktok: "",
+      shorts: "",
+      youtube: "",
+    });
   };
 
   // -------------------------------------------------
@@ -172,6 +186,7 @@ const normalizeLegacyPagesToChapter = (item) => {
       setSelectedChapterIndex(0);
       setChapterTitle("");
       setMangaPrompt("");
+      setContentProfile("tiktok");
     }
 
     if (type === "mangas") {
@@ -185,10 +200,14 @@ const normalizeLegacyPagesToChapter = (item) => {
       setSelectedChapterIndex(0);
       setChapterTitle(loadedChapters[0]?.title || "Capítulo 1");
       setMangaPrompt(loadedChapters[0]?.prompt || "");
+      setContentProfile("tiktok");
     }
 
-    setGeneratedAudioUrl("");
-    setGeneratedVideoUrl("");
+    setGeneratedVideos({
+      tiktok: "",
+      shorts: "",
+      youtube: "",
+    });
   };
 
   // -------------------------------------------------
@@ -209,9 +228,13 @@ const normalizeLegacyPagesToChapter = (item) => {
     setSelectedChapterIndex(0);
     setChapterTitle("");
     setMangaPrompt("");
+    setContentProfile("tiktok");
 
-    setGeneratedAudioUrl("");
-    setGeneratedVideoUrl("");
+    setGeneratedVideos({
+      tiktok: "",
+      shorts: "",
+      youtube: "",
+    });
   };
 
   // -------------------------------------------------
@@ -255,53 +278,53 @@ const normalizeLegacyPagesToChapter = (item) => {
   // -------------------------------------------------
   // SAVE MANGA
   // -------------------------------------------------
- const saveManga = async (e) => {
-  e.preventDefault();
+  const saveManga = async (e) => {
+    e.preventDefault();
 
-  const currentUser = sessionStorage.getItem("adminUser");
+    const currentUser = sessionStorage.getItem("adminUser");
 
-  const normalizedChapters = mangaChapters.map((chapter, chapterIndex) => ({
-    chapterNumber: chapter.chapterNumber || chapterIndex + 1,
-    title: chapter.title || `Capítulo ${chapterIndex + 1}`,
-    prompt: chapter.prompt || "",
-    pages: (chapter.pages || []).map((page, pageIndex) => ({
-      pageNumber: page.pageNumber || pageIndex + 1,
-      panels: (page.panels || []).map((panel, panelIndex) => ({
-  type: panel.type || "narration",
-  dialogue: panel.dialogue || "",
-  imagePrompt: panel.imagePrompt || "",
-  imageUrl: panel.imageUrl || "",
-  order: panel.order || panelIndex + 1,
-})),
-    })),
-  }));
+    const normalizedChapters = mangaChapters.map((chapter, chapterIndex) => ({
+      chapterNumber: chapter.chapterNumber || chapterIndex + 1,
+      title: chapter.title || `Capítulo ${chapterIndex + 1}`,
+      prompt: chapter.prompt || "",
+      pages: (chapter.pages || []).map((page, pageIndex) => ({
+        pageNumber: page.pageNumber || pageIndex + 1,
+        panels: (page.panels || []).map((panel, panelIndex) => ({
+          type: panel.type || "narration",
+          dialogue: panel.dialogue || "",
+          imagePrompt: panel.imagePrompt || "",
+          imageUrl: panel.imageUrl || "",
+          order: panel.order || panelIndex + 1,
+        })),
+      })),
+    }));
 
-  const payload = {
-    title,
-    coverUrl: cover,
-    author: currentUser,
-    chapters: normalizedChapters,
+    const payload = {
+      title,
+      coverUrl: cover,
+      author: currentUser,
+      chapters: normalizedChapters,
+    };
+
+    const url = selectedId ? `/api/mangas/${selectedId}` : "/api/mangas";
+    const method = selectedId ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      alert("Manga guardado");
+      resetForm();
+      loadData();
+    } else {
+      const err = await res.text();
+      console.error("❌ ERROR SAVE MANGA:", err);
+      alert("Error guardando manga");
+    }
   };
-
-  const url = selectedId ? `/api/mangas/${selectedId}` : "/api/mangas";
-  const method = selectedId ? "PUT" : "POST";
-
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (res.ok) {
-    alert("Manga guardado");
-    resetForm();
-    loadData();
-  } else {
-    const err = await res.text();
-    console.error("❌ ERROR SAVE MANGA:", err);
-    alert("Error guardando manga");
-  }
-};
 
   // -------------------------------------------------
   // DELETE ITEM
@@ -327,75 +350,80 @@ const normalizeLegacyPagesToChapter = (item) => {
   // GENERATE MANGA (AI)
   // -------------------------------------------------
   const generateManga = async () => {
-  if (!title.trim()) return alert("Pon un título");
-  if (!mangaPrompt.trim()) return alert("Describe el capítulo");
+    if (!title.trim()) return alert("Pon un título");
+    if (!mangaPrompt.trim()) return alert("Describe el capítulo");
 
-  let chaptersCopy = [...mangaChapters];
-  let chapterIndex = selectedChapterIndex;
+    let chaptersCopy = [...mangaChapters];
+    let chapterIndex = selectedChapterIndex;
 
-  if (!chaptersCopy.length) {
-    const firstChapter = {
-      chapterNumber: 1,
-      title: chapterTitle.trim() || "Capítulo 1",
-      prompt: mangaPrompt,
-      pages: [],
-    };
-
-    chaptersCopy = [firstChapter];
-    chapterIndex = 0;
-
-    setMangaChapters(chaptersCopy);
-    setSelectedChapterIndex(0);
-    setChapterTitle(firstChapter.title);
-  }
-
-  const current = chaptersCopy[chapterIndex];
-
-  try {
-    const res = await fetch("/api/ai/generate-manga", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
+    if (!chaptersCopy.length) {
+      const firstChapter = {
+        chapterNumber: 1,
+        title: chapterTitle.trim() || "Capítulo 1",
         prompt: mangaPrompt,
-        previousPages: current.pages || [],
-      }),
-    });
-
-    const data = await res.json();
-
-    if (data.pages) {
-      const offset = (current.pages || []).length;
-
-      const newPages = data.pages.map((p, i) => ({
-        pageNumber: offset + i + 1,
-        panels: (p.panels || []).map((panel, panelIndex) => ({
-  type: panel.type || "narration", // 🔥 CLAVE
-  dialogue: panel.dialogue || "",
-  imagePrompt: panel.imagePrompt || "",
-  imageUrl: panel.imageUrl || panel.image || "",
-  order: panel.order || panelIndex + 1,
-}))
-      }));
-
-      chaptersCopy[chapterIndex] = {
-        ...current,
-        title: current.title || `Capítulo ${chapterIndex + 1}`,
-        prompt: mangaPrompt,
-        pages: [...(current.pages || []), ...newPages],
+        pages: [],
       };
 
+      chaptersCopy = [firstChapter];
+      chapterIndex = 0;
+
       setMangaChapters(chaptersCopy);
-      setGeneratedAudioUrl("");
-      setGeneratedVideoUrl("");
-    } else {
+      setSelectedChapterIndex(0);
+      setChapterTitle(firstChapter.title);
+    }
+
+    const current = chaptersCopy[chapterIndex];
+
+    try {
+      const res = await fetch("/api/ai/generate-manga", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          prompt: mangaPrompt,
+          previousPages: current.pages || [],
+          contentProfile,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.pages) {
+        const offset = (current.pages || []).length;
+
+        const newPages = data.pages.map((p, i) => ({
+          pageNumber: offset + i + 1,
+          panels: (p.panels || []).map((panel, panelIndex) => ({
+            type: panel.type || "narration",
+            dialogue: panel.dialogue || "",
+            imagePrompt: panel.imagePrompt || "",
+            imageUrl: panel.imageUrl || panel.image || "",
+            order: panel.order || panelIndex + 1,
+          })),
+        }));
+
+        chaptersCopy[chapterIndex] = {
+          ...current,
+          title: current.title || `Capítulo ${chapterIndex + 1}`,
+          prompt: mangaPrompt,
+          pages: [...(current.pages || []), ...newPages],
+        };
+
+        setMangaChapters(chaptersCopy);
+        setGeneratedVideos({
+          tiktok: "",
+          shorts: "",
+          youtube: "",
+        });
+      } else {
+        alert("Error generando manga");
+      }
+    } catch (error) {
+      console.error(error);
       alert("Error generando manga");
     }
-  } catch (error) {
-    console.error(error);
-    alert("Error generando manga");
-  }
-};
+  };
+
   // -------------------------------------------------
   // GENERATE CHAPTER AI
   // -------------------------------------------------
@@ -426,7 +454,20 @@ const normalizeLegacyPagesToChapter = (item) => {
   };
 
   // -------------------------------------------------
-  // GENERATE VIDEO
+  // TOGGLE FORMAT
+  // -------------------------------------------------
+  const toggleFormat = (format) => {
+    setSelectedFormats((prev) => {
+      if (prev.includes(format)) {
+        const updated = prev.filter((f) => f !== format);
+        return updated.length ? updated : [format];
+      }
+      return [...prev, format];
+    });
+  };
+
+  // -------------------------------------------------
+  // GENERATE VIDEO AUTOMÁTICO MULTIFORMATO
   // -------------------------------------------------
   const generateVideo = async () => {
     if (!title.trim()) return alert("El manga necesita título");
@@ -435,7 +476,11 @@ const normalizeLegacyPagesToChapter = (item) => {
     }
 
     setGeneratingVideo(true);
-    setGeneratedVideoUrl("");
+    setGeneratedVideos({
+      tiktok: "",
+      shorts: "",
+      youtube: "",
+    });
 
     try {
       const res = await fetch("/api/ai/generate-video", {
@@ -445,9 +490,9 @@ const normalizeLegacyPagesToChapter = (item) => {
         },
         body: JSON.stringify({
           title,
-          format: videoFormat,
+          formats: selectedFormats,
           pages: currentPages,
-          audioUrl: generatedAudioUrl || "",
+          usePanelVoices: true,
         }),
       });
 
@@ -457,8 +502,20 @@ const normalizeLegacyPagesToChapter = (item) => {
         throw new Error(data.error || "Error generando video");
       }
 
-      setGeneratedVideoUrl(data.videoUrl);
-      alert("Video generado correctamente");
+      const mapped = {
+        tiktok: "",
+        shorts: "",
+        youtube: "",
+      };
+
+      for (const item of data.videos || []) {
+        if (item?.format && item?.videoUrl) {
+          mapped[item.format] = item.videoUrl;
+        }
+      }
+
+      setGeneratedVideos(mapped);
+      alert("Videos generados correctamente");
     } catch (error) {
       console.error(error);
       alert(error.message || "No se pudo generar el video");
@@ -468,53 +525,14 @@ const normalizeLegacyPagesToChapter = (item) => {
   };
 
   // -------------------------------------------------
-  // GENERATE VOICE
+  // DOWNLOAD VIDEO BY FORMAT
   // -------------------------------------------------
-  const generateVoice = async () => {
-    if (!title.trim()) return alert("El manga necesita título");
-    if (!currentPages.length) {
-      return alert("Primero genera o carga páginas del capítulo seleccionado");
-    }
-
-    setGeneratingVoice(true);
-    setGeneratedAudioUrl("");
+  const downloadVideo = async (format) => {
+    const videoUrl = generatedVideos[format];
+    if (!videoUrl) return alert(`Primero genera el video ${format}`);
 
     try {
-      const res = await fetch("/api/ai/generate-voice", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title,
-          pages: currentPages,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error generando voz");
-      }
-
-      setGeneratedAudioUrl(data.audioUrl || "");
-      alert("Voz generada correctamente");
-    } catch (error) {
-      console.error(error);
-      alert(error.message || "No se pudo generar la voz");
-    } finally {
-      setGeneratingVoice(false);
-    }
-  };
-
-  // -------------------------------------------------
-  // DOWNLOAD VIDEO
-  // -------------------------------------------------
-  const downloadVideo = async () => {
-    if (!generatedVideoUrl) return alert("Primero genera el video");
-
-    try {
-      const response = await fetch(generatedVideoUrl);
+      const response = await fetch(videoUrl);
       const blob = await response.blob();
 
       const url = window.URL.createObjectURL(blob);
@@ -529,26 +547,27 @@ const normalizeLegacyPagesToChapter = (item) => {
         .replace(/[^\w\-]+/g, "_")
         .toLowerCase();
 
-      a.download = `${safeTitle}_${safeChapter}.mp4`;
+      a.download = `${safeTitle}_${safeChapter}_${format}.mp4`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error(error);
-      alert("No se pudo descargar el video");
+      alert(`No se pudo descargar el video ${format}`);
     }
   };
 
-  const copyVideoLink = async () => {
-    if (!generatedVideoUrl) return alert("Primero genera el video");
+  const copyVideoLink = async (format) => {
+    const videoUrl = generatedVideos[format];
+    if (!videoUrl) return alert(`Primero genera el video ${format}`);
 
     try {
-      await navigator.clipboard.writeText(generatedVideoUrl);
-      alert("Enlace del video copiado");
+      await navigator.clipboard.writeText(videoUrl);
+      alert(`Enlace del video ${format} copiado`);
     } catch (error) {
       console.error(error);
-      alert("No se pudo copiar el enlace");
+      alert(`No se pudo copiar el enlace de ${format}`);
     }
   };
 
@@ -573,7 +592,15 @@ const normalizeLegacyPagesToChapter = (item) => {
 
       return updated;
     });
-  }, [chapterTitle, mangaPrompt]);
+  }, [chapterTitle, mangaPrompt, selectedChapterIndex, mangaChapters.length]);
+
+  useEffect(() => {
+    setGeneratedVideos({
+      tiktok: "",
+      shorts: "",
+      youtube: "",
+    });
+  }, [contentProfile]);
 
   return (
     <div className="admin-container">
@@ -792,6 +819,41 @@ const normalizeLegacyPagesToChapter = (item) => {
               placeholder="Describe qué pasa en este capítulo, personajes, emociones, escenario..."
             />
 
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginTop: "10px",
+                marginBottom: "10px",
+              }}
+            >
+              <label style={{ fontWeight: 600 }}>Estilo de manga:</label>
+
+              <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="contentProfile"
+                  value="tiktok"
+                  checked={contentProfile === "tiktok"}
+                  onChange={() => setContentProfile("tiktok")}
+                />
+                TikTok / Shorts
+              </label>
+
+              <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="contentProfile"
+                  value="youtube"
+                  checked={contentProfile === "youtube"}
+                  onChange={() => setContentProfile("youtube")}
+                />
+                YouTube Horizontal
+              </label>
+            </div>
+
             <button className="admin-button" type="button" onClick={uploadImage}>
               {uploading ? "Subiendo..." : "Subir portada"}
             </button>
@@ -822,8 +884,11 @@ const normalizeLegacyPagesToChapter = (item) => {
                     setSelectedChapterIndex(idx);
                     setChapterTitle(mangaChapters[idx]?.title || "");
                     setMangaPrompt(mangaChapters[idx]?.prompt || "");
-                    setGeneratedAudioUrl("");
-                    setGeneratedVideoUrl("");
+                    setGeneratedVideos({
+                      tiktok: "",
+                      shorts: "",
+                      youtube: "",
+                    });
                   }}
                   className="admin-select short-select"
                 >
@@ -844,62 +909,62 @@ const normalizeLegacyPagesToChapter = (item) => {
               className="admin-button"
               type="button"
               onClick={() => {
-  if (!mangaChapters.length) {
-    const firstChapter = {
-      chapterNumber: 1,
-      title: chapterTitle.trim() || "Capítulo 1",
-      prompt: mangaPrompt,
-      pages: [],
-    };
+                if (!mangaChapters.length) {
+                  const firstChapter = {
+                    chapterNumber: 1,
+                    title: chapterTitle.trim() || "Capítulo 1",
+                    prompt: mangaPrompt,
+                    pages: [],
+                  };
 
-    const updated = [
-      {
-        ...firstChapter,
-        pages: [
-          {
-            pageNumber: 1,
-            panels: [
-              {
-                type: "narration",
-                imageUrl: "",
-                dialogue: "",
-                imagePrompt: "",
-                order: 1,
-              },
-            ],
-          },
-        ],
-      },
-    ];
+                  const updated = [
+                    {
+                      ...firstChapter,
+                      pages: [
+                        {
+                          pageNumber: 1,
+                          panels: [
+                            {
+                              type: "narration",
+                              imageUrl: "",
+                              dialogue: "",
+                              imagePrompt: "",
+                              order: 1,
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ];
 
-    setMangaChapters(updated);
-    setSelectedChapterIndex(0);
-    setChapterTitle(updated[0].title);
-    return;
-  }
+                  setMangaChapters(updated);
+                  setSelectedChapterIndex(0);
+                  setChapterTitle(updated[0].title);
+                  return;
+                }
 
-  const updated = [...mangaChapters];
-  const selected = updated[selectedChapterIndex];
-  const pages = selected.pages || [];
+                const updated = [...mangaChapters];
+                const selected = updated[selectedChapterIndex];
+                const pages = selected.pages || [];
 
-  selected.pages = [
-    ...pages,
-    {
-      pageNumber: pages.length + 1,
-      panels: [
-        {
-          type: "narration",
-          imageUrl: "",
-          dialogue: "",
-          imagePrompt: "",
-          order: 1,
-        },
-      ],
-    },
-  ];
+                selected.pages = [
+                  ...pages,
+                  {
+                    pageNumber: pages.length + 1,
+                    panels: [
+                      {
+                        type: "narration",
+                        imageUrl: "",
+                        dialogue: "",
+                        imagePrompt: "",
+                        order: 1,
+                      },
+                    ],
+                  },
+                ];
 
-  setMangaChapters(updated);
-}}
+                setMangaChapters(updated);
+              }}
             >
               ➕ Agregar Página
             </button>
@@ -924,37 +989,45 @@ const normalizeLegacyPagesToChapter = (item) => {
             {!currentPages.length && <p>No hay páginas en este capítulo.</p>}
 
             {currentPages.map((page, pageIndex) => (
-  <div key={`${selectedChapterIndex}-${page.pageNumber}-${pageIndex}`} className="manga-page">
-    <h4>Página {page.pageNumber}</h4>
+              <div
+                key={`${selectedChapterIndex}-${page.pageNumber}-${pageIndex}`}
+                className="manga-page"
+              >
+                <h4>Página {page.pageNumber}</h4>
 
-    {page.panels.map((panel, panelIndex) => (
-      <div key={`${page.pageNumber}-${panel.order}-${panelIndex}`} className="manga-panel">
-        {panel.imageUrl && (
-          <img
-            src={panel.imageUrl}
-            alt={`Panel ${panelIndex + 1}`}
-            className="manga-image"
-          />
-        )}
-        <div style={{ marginBottom: "6px", fontSize: "12px", opacity: 0.8 }}>
-  {panel.type === "speech" && "💬 Diálogo"}
-  {panel.type === "thought" && "🧠 Pensamiento"}
-  {panel.type === "narration" && "📖 Narración"}
-</div>
+                {page.panels.map((panel, panelIndex) => (
+                  <div
+                    key={`${page.pageNumber}-${panel.order}-${panelIndex}`}
+                    className="manga-panel"
+                  >
+                    {panel.imageUrl && (
+                      <img
+                        src={panel.imageUrl}
+                        alt={`Panel ${panelIndex + 1}`}
+                        className="manga-image"
+                      />
+                    )}
 
-        <textarea
-          value={panel.dialogue || ""}
-          onChange={(e) => {
-            const updated = [...mangaChapters];
-            updated[selectedChapterIndex].pages[pageIndex].panels[panelIndex].dialogue = e.target.value;
-            setMangaChapters(updated);
-          }}
-          placeholder="Diálogo"
-        />
-      </div>
-    ))}
-  </div>
-))}
+                    <div style={{ marginBottom: "6px", fontSize: "12px", opacity: 0.8 }}>
+                      {panel.type === "speech" && "💬 Diálogo"}
+                      {panel.type === "thought" && "🧠 Pensamiento"}
+                      {panel.type === "narration" && "📖 Narración"}
+                    </div>
+
+                    <textarea
+                      value={panel.dialogue || ""}
+                      onChange={(e) => {
+                        const updated = [...mangaChapters];
+                        updated[selectedChapterIndex].pages[pageIndex].panels[panelIndex].dialogue =
+                          e.target.value;
+                        setMangaChapters(updated);
+                      }}
+                      placeholder="Diálogo"
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
 
             <div
               style={{
@@ -965,14 +1038,34 @@ const normalizeLegacyPagesToChapter = (item) => {
                 marginTop: "16px",
               }}
             >
-              <select
-                value={videoFormat}
-                onChange={(e) => setVideoFormat(e.target.value)}
-                className="admin-select short-select"
-              >
-                <option value="tiktok">TikTok / Shorts (9:16)</option>
-                <option value="youtube">YouTube horizontal (16:9)</option>
-              </select>
+              <label style={{ fontWeight: 600 }}>Formatos de video:</label>
+
+              <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedFormats.includes("tiktok")}
+                  onChange={() => toggleFormat("tiktok")}
+                />
+                TikTok
+              </label>
+
+              <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedFormats.includes("shorts")}
+                  onChange={() => toggleFormat("shorts")}
+                />
+                Shorts
+              </label>
+
+              <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedFormats.includes("youtube")}
+                  onChange={() => toggleFormat("youtube")}
+                />
+                YouTube
+              </label>
 
               <button
                 className="admin-button"
@@ -980,73 +1073,117 @@ const normalizeLegacyPagesToChapter = (item) => {
                 onClick={generateVideo}
                 disabled={generatingVideo}
               >
-                {generatingVideo ? "🎬 Generando video..." : "🎬 Generar Video"}
+                {generatingVideo
+                  ? "🎬 Generando videos..."
+                  : "🎬 Generar Videos Automáticos"}
               </button>
             </div>
 
-            {generatedVideoUrl && (
-              <div style={{ marginTop: "16px" }}>
-                <video
-                  src={generatedVideoUrl}
-                  controls
-                  style={{
-                    width: "100%",
-                    maxWidth: "420px",
-                    borderRadius: "12px",
-                  }}
-                />
-                <div style={{ marginTop: "8px" }}>
-                  <a href={generatedVideoUrl} target="_blank" rel="noreferrer">
-                    Ver video generado
-                  </a>
-                </div>
-              </div>
-            )}
+            {(generatedVideos.tiktok ||
+              generatedVideos.shorts ||
+              generatedVideos.youtube) && (
+              <div style={{ marginTop: "20px", display: "grid", gap: "20px" }}>
+                {generatedVideos.tiktok && (
+                  <div>
+                    <h4>📱 TikTok</h4>
+                    <video
+                      src={generatedVideos.tiktok}
+                      controls
+                      style={{
+                        width: "100%",
+                        maxWidth: "420px",
+                        borderRadius: "12px",
+                      }}
+                    />
+                    <div style={{ marginTop: "8px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <a href={generatedVideos.tiktok} target="_blank" rel="noreferrer">
+                        Ver video
+                      </a>
+                      <button
+                        className="admin-button"
+                        type="button"
+                        onClick={() => downloadVideo("tiktok")}
+                      >
+                        ⬇ Descargar
+                      </button>
+                      <button
+                        className="admin-button"
+                        type="button"
+                        onClick={() => copyVideoLink("tiktok")}
+                      >
+                        📋 Copiar enlace
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                alignItems: "center",
-                flexWrap: "wrap",
-                marginTop: "16px",
-              }}
-            >
-              <button
-                className="admin-button"
-                type="button"
-                onClick={generateVoice}
-                disabled={generatingVoice}
-              >
-                {generatingVoice ? "🎙 Generando voz..." : "🎙 Generar Voz"}
-              </button>
+                {generatedVideos.shorts && (
+                  <div>
+                    <h4>🎞️ YouTube Shorts</h4>
+                    <video
+                      src={generatedVideos.shorts}
+                      controls
+                      style={{
+                        width: "100%",
+                        maxWidth: "420px",
+                        borderRadius: "12px",
+                      }}
+                    />
+                    <div style={{ marginTop: "8px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <a href={generatedVideos.shorts} target="_blank" rel="noreferrer">
+                        Ver video
+                      </a>
+                      <button
+                        className="admin-button"
+                        type="button"
+                        onClick={() => downloadVideo("shorts")}
+                      >
+                        ⬇ Descargar
+                      </button>
+                      <button
+                        className="admin-button"
+                        type="button"
+                        onClick={() => copyVideoLink("shorts")}
+                      >
+                        📋 Copiar enlace
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-              <button
-                className="admin-button"
-                type="button"
-                onClick={downloadVideo}
-                disabled={!generatedVideoUrl}
-              >
-                ⬇ Descargar Video
-              </button>
-
-              <button
-                className="admin-button"
-                type="button"
-                onClick={copyVideoLink}
-                disabled={!generatedVideoUrl}
-              >
-                📋 Copiar Enlace
-              </button>
-            </div>
-
-            {generatedAudioUrl && (
-              <div style={{ marginTop: "16px" }}>
-                <audio
-                  src={generatedAudioUrl}
-                  controls
-                  style={{ width: "100%", maxWidth: "420px" }}
-                />
+                {generatedVideos.youtube && (
+                  <div>
+                    <h4>🖥️ YouTube Horizontal</h4>
+                    <video
+                      src={generatedVideos.youtube}
+                      controls
+                      style={{
+                        width: "100%",
+                        maxWidth: "720px",
+                        borderRadius: "12px",
+                      }}
+                    />
+                    <div style={{ marginTop: "8px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <a href={generatedVideos.youtube} target="_blank" rel="noreferrer">
+                        Ver video
+                      </a>
+                      <button
+                        className="admin-button"
+                        type="button"
+                        onClick={() => downloadVideo("youtube")}
+                      >
+                        ⬇ Descargar
+                      </button>
+                      <button
+                        className="admin-button"
+                        type="button"
+                        onClick={() => copyVideoLink("youtube")}
+                      >
+                        📋 Copiar enlace
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

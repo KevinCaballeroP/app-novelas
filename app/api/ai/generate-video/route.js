@@ -17,6 +17,13 @@ function getFfmpegPath() {
   return process.env.FFMPEG_PATH || "ffmpeg";
 }
 
+function getFfprobePath(ffmpegPath) {
+  if (ffmpegPath.toLowerCase().endsWith("ffmpeg.exe")) {
+    return ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
+  }
+  return process.env.FFPROBE_PATH || "ffprobe";
+}
+
 async function downloadFile(url, outputPath) {
   if (!url) {
     throw new Error("El archivo está vacío");
@@ -72,11 +79,7 @@ function escapePathForFFmpeg(filePath) {
 }
 
 function getAudioDuration(ffmpegPath, audioPath) {
-  let ffprobePath = "ffprobe";
-
-  if (ffmpegPath.toLowerCase().endsWith("ffmpeg.exe")) {
-    ffprobePath = ffmpegPath.replace(/ffmpeg\.exe$/i, "ffprobe.exe");
-  }
+  const ffprobePath = getFfprobePath(ffmpegPath);
 
   const result = spawnSync(
     ffprobePath,
@@ -103,9 +106,600 @@ function getAudioDuration(ffmpegPath, audioPath) {
   return parseFloat(result.stdout.trim());
 }
 
+function inferPanelMood(caption = "", imagePrompt = "") {
+  const text = `${caption} ${imagePrompt}`.toLowerCase();
+
+  if (
+    text.includes("golpe") ||
+    text.includes("ataque") ||
+    text.includes("explosión") ||
+    text.includes("impacto") ||
+    text.includes("pelea") ||
+    text.includes("corte") ||
+    text.includes("gritó") ||
+    text.includes("corrió") ||
+    text.includes("saltó") ||
+    text.includes("sangre") ||
+    text.includes("acción") ||
+    text.includes("action")
+  ) {
+    return "action";
+  }
+
+  if (
+    text.includes("pensó") ||
+    text.includes("susurró") ||
+    text.includes("silencio") ||
+    text.includes("triste") ||
+    text.includes("dolor") ||
+    text.includes("recuerdo") ||
+    text.includes("miró") ||
+    text.includes("emocional") ||
+    text.includes("close-up")
+  ) {
+    return "emotional";
+  }
+
+  if (
+    text.includes("torre") ||
+    text.includes("ciudad") ||
+    text.includes("paisaje") ||
+    text.includes("mundo") ||
+    text.includes("cielo") ||
+    text.includes("montaña") ||
+    text.includes("environment") ||
+    text.includes("landscape")
+  ) {
+    return "environment";
+  }
+
+  return "dialogue";
+}
+
+function getFormatProfile(format) {
+  if (format === "youtube") {
+    return {
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      panelPause: 0.28,
+      minPanelDuration: 2.2,
+      maxPanelDuration: 6.5,
+      zoomBase: "slow",
+      subtitleFontSize: 40,
+      subtitleY: "h-150",
+      fadeInMax: 0.35,
+      fadeOutDur: 0.25,
+      titleSuffix: "youtube",
+    };
+  }
+
+  if (format === "shorts") {
+    return {
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      panelPause: 0.15,
+      minPanelDuration: 1.45,
+      maxPanelDuration: 3.2,
+      zoomBase: "fast",
+      subtitleFontSize: 46,
+      subtitleY: "h-230",
+      fadeInMax: 0.20,
+      fadeOutDur: 0.18,
+      titleSuffix: "shorts",
+    };
+  }
+
+  return {
+    width: 1080,
+    height: 1920,
+    fps: 30,
+    panelPause: 0.18,
+    minPanelDuration: 1.5,
+    maxPanelDuration: 3.4,
+    zoomBase: "fast",
+    subtitleFontSize: 46,
+    subtitleY: "h-230",
+    fadeInMax: 0.22,
+    fadeOutDur: 0.18,
+    titleSuffix: "tiktok",
+  };
+}
+
+function buildAnimationFilter({
+  width,
+  height,
+  duration,
+  fps,
+  style = "auto",
+  caption = "",
+  imagePrompt = "",
+  panelIndex = 0,
+  format = "tiktok",
+}) {
+  const totalFrames = Math.max(Math.round(duration * fps), 1);
+  const mood = style === "auto" ? inferPanelMood(caption, imagePrompt) : style;
+  const profile = getFormatProfile(format);
+
+ const parts =
+  format === "youtube"
+    ? [
+        `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+        `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
+      ]
+    : [
+        `scale=${width}:${height}:force_original_aspect_ratio=increase`,
+        `crop=${width}:${height}`,
+      ];
+  const isWide = width > height;
+  const isSlowBase = profile.zoomBase === "slow";
+
+  let zoomExpr = isSlowBase
+    ? "min(zoom+0.00035,1.04)"
+    : "min(zoom+0.0008,1.08)";
+  let xExpr = "iw/2-(iw/zoom/2)";
+  let yExpr = "ih/2-(ih/zoom/2)";
+  let addShake = false;
+  let addFlash = false;
+
+  if (mood === "environment") {
+    zoomExpr = isSlowBase
+      ? "min(zoom+0.00022,1.025)"
+      : "min(zoom+0.00045,1.05)";
+    xExpr = isWide
+      ? `iw/2-(iw/zoom/2)+sin(on/40)*14`
+      : `iw/2-(iw/zoom/2)+sin(on/28)*18`;
+    yExpr = isWide
+      ? `ih/2-(ih/zoom/2)+cos(on/46)*8`
+      : `ih/2-(ih/zoom/2)+cos(on/36)*10`;
+  } else if (mood === "dialogue") {
+    zoomExpr = isSlowBase
+      ? "min(zoom+0.00032,1.04)"
+      : "min(zoom+0.00075,1.08)";
+    xExpr =
+      panelIndex % 2 === 0
+        ? `iw/2-(iw/zoom/2)+on*${isSlowBase ? "0.08" : "0.15"}`
+        : `iw/2-(iw/zoom/2)-on*${isSlowBase ? "0.08" : "0.15"}`;
+    yExpr = "ih/2-(ih/zoom/2)";
+  } else if (mood === "emotional") {
+    zoomExpr = isSlowBase
+      ? "min(zoom+0.00045,1.06)"
+      : "min(zoom+0.00115,1.14)";
+    xExpr = "iw/2-(iw/zoom/2)";
+    yExpr = isWide ? "ih/2-(ih/zoom/2)-4" : "ih/2-(ih/zoom/2)-6";
+  } else if (mood === "action") {
+    zoomExpr = isSlowBase
+      ? "min(zoom+0.0006,1.08)"
+      : "min(zoom+0.0015,1.16)";
+    xExpr = isWide
+      ? `iw/2-(iw/zoom/2)+sin(on/4.1)*7`
+      : `iw/2-(iw/zoom/2)+sin(on/2.6)*10`;
+    yExpr = isWide
+      ? `ih/2-(ih/zoom/2)+sin(on/4.6)*4`
+      : `ih/2-(ih/zoom/2)+sin(on/3.1)*6`;
+    addShake = !isSlowBase;
+    addFlash = true;
+  }
+
+  parts.push(
+    `zoompan=z='${zoomExpr}':d=${totalFrames}:x='${xExpr}':y='${yExpr}':s=${width}x${height}:fps=${fps}`
+  );
+
+  if (addShake) {
+    parts.push(`eq=brightness='if(lt(mod(t,0.12),0.06),0.015,0)'`);
+  }
+
+  if (addFlash) {
+    parts.push(
+      `drawbox=x=0:y=0:w=iw:h=ih:color=white@0.0:t=fill:enable='between(t,${Math.max(
+        duration - 0.22,
+        0
+      )},${Math.max(duration - 0.12, 0)})'`
+    );
+  }
+
+  const fadeIn = Math.min(profile.fadeInMax, duration * 0.16);
+  const fadeOutStart = Math.max(duration - profile.fadeOutDur, 0);
+
+  parts.push(`fade=t=in:st=0:d=${fadeIn}`);
+  parts.push(`fade=t=out:st=${fadeOutStart}:d=${profile.fadeOutDur}`);
+
+  return { vfParts: parts, mood };
+}
+
+function buildTextFilter(textPath, mood, format = "tiktok") {
+  const escapedTextPath = escapePathForFFmpeg(textPath);
+  const profile = getFormatProfile(format);
+
+  let y = profile.subtitleY;
+  let fontsize = profile.subtitleFontSize;
+  let boxColor = "black@0.55";
+  let boxBorder = format === "youtube" ? 18 : 24;
+
+  if (mood === "emotional") {
+    fontsize += 2;
+    boxColor = "black@0.45";
+  } else if (mood === "action") {
+    fontsize += 2;
+    boxColor = "black@0.60";
+  }
+
+  return `drawtext=textfile='${escapedTextPath}':fontcolor=white:fontsize=${fontsize}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=${boxBorder}`;
+}
+
+async function generateVoiceForPanel(text) {
+  const voiceRes = await fetch("http://localhost:8000/generate-voice", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!voiceRes.ok) {
+    throw new Error("Error generando voz por panel en FastAPI");
+  }
+
+  const data = await voiceRes.json();
+
+  if (!data.audio_url) {
+    throw new Error("FastAPI no devolvió audio_url para panel");
+  }
+
+  return data.audio_url;
+}
+
+function concatMediaFiles(ffmpegPath, inputPaths, outputPath, mode = "video") {
+  const listFile = path.join(path.dirname(outputPath), `concat_${mode}_${Date.now()}.txt`);
+
+  fs.writeFileSync(
+    listFile,
+    inputPaths.map((file) => `file '${file.replace(/\\/g, "/")}'`).join("\n"),
+    "utf8"
+  );
+
+  const args =
+    mode === "audio"
+      ? [
+          "-y",
+          "-f", "concat",
+          "-safe", "0",
+          "-i", listFile,
+          "-c:a", "mp3",
+          outputPath,
+        ]
+      : [
+          "-y",
+          "-f", "concat",
+          "-safe", "0",
+          "-i", listFile,
+          "-c", "copy",
+          outputPath,
+        ];
+
+  const result = spawnSync(ffmpegPath, args, {
+    encoding: "utf8",
+    shell: false,
+  });
+
+  if (result.error) {
+    throw new Error(`No se pudo ejecutar ffmpeg para unir ${mode}: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`ffmpeg falló uniendo ${mode}: ${result.stderr || "sin stderr"}`);
+  }
+}
+
+function createSilenceAudio(ffmpegPath, outputPath, duration = 0.18) {
+  const result = spawnSync(
+    ffmpegPath,
+    [
+      "-y",
+      "-f", "lavfi",
+      "-i", "anullsrc=r=24000:cl=mono",
+      "-t", String(duration),
+      "-q:a", "9",
+      "-acodec", "mp3",
+      outputPath,
+    ],
+    {
+      encoding: "utf8",
+      shell: false,
+    }
+  );
+
+  if (result.error) {
+    throw new Error(`No se pudo crear silencio: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`ffmpeg falló creando silencio: ${result.stderr || "sin stderr"}`);
+  }
+}
+
+function reencodeClipForConcat(ffmpegPath, inputPath, outputPath, fps) {
+  const result = spawnSync(
+    ffmpegPath,
+    [
+      "-y",
+      "-i", inputPath,
+      "-r", String(fps),
+      "-c:v", "libx264",
+      "-preset", "medium",
+      "-pix_fmt", "yuv420p",
+      "-an",
+      outputPath,
+    ],
+    {
+      encoding: "utf8",
+      shell: false,
+    }
+  );
+
+  if (result.error) {
+    throw new Error(`No se pudo re-encodear clip: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`Error re-encodeando clip: ${result.stderr || "sin stderr"}`);
+  }
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function normalizeFormats(formats) {
+  const valid = new Set(["tiktok", "shorts", "youtube"]);
+  const arr = Array.isArray(formats) ? formats : [formats].filter(Boolean);
+
+  const normalized = arr
+    .map((f) => String(f || "").toLowerCase().trim())
+    .filter((f) => valid.has(f));
+
+  return normalized.length ? [...new Set(normalized)] : ["tiktok"];
+}
+
+function buildHookText(title, originalCaption, panelIndex) {
+  const caption = cleanText(originalCaption);
+
+  if (panelIndex !== 1) return caption;
+
+  if (!caption) {
+    return `Nadie estaba listo para lo que ocurriría en ${title}.`;
+  }
+
+  if (caption.length <= 65) return caption;
+
+  const shorter = caption.split(/[.!?]/).find(Boolean)?.trim();
+  if (shorter && shorter.length >= 8) {
+    return shorter;
+  }
+
+  return caption.slice(0, 65).trim() + "...";
+}
+
+async function buildSharedPanelAssets(tempDir, ffmpegPath, panelData, usePanelVoices) {
+  const sharedPanels = [];
+
+  for (let i = 0; i < panelData.length; i++) {
+    const panel = panelData[i];
+    const { index, imageUrl, caption } = panel;
+
+    const imagePath = path.join(tempDir, `shared_img_${index}.png`);
+    await downloadFile(imageUrl, imagePath);
+
+    let voicePath = "";
+    let realAudioDuration = 0;
+
+    if (usePanelVoices && caption) {
+      const panelAudioUrl = await generateVoiceForPanel(caption);
+      voicePath = path.join(tempDir, `shared_voice_${index}.mp3`);
+
+      console.log("🎤 Descargando voz panel:", index, panelAudioUrl);
+      await downloadFile(panelAudioUrl, voicePath);
+
+      realAudioDuration = getAudioDuration(ffmpegPath, voicePath);
+    }
+
+    sharedPanels.push({
+      ...panel,
+      imagePath,
+      voicePath,
+      realAudioDuration,
+    });
+  }
+
+  return sharedPanels;
+}
+
+async function generateSingleFormatVideo({
+  tempDir,
+  ffmpegPath,
+  title,
+  sharedPanels,
+  format,
+  animationStyle = "auto",
+  usePanelVoices = true,
+}) {
+  const profile = getFormatProfile(format);
+  const { width, height, fps, panelPause, minPanelDuration, maxPanelDuration } = profile;
+
+  const formatDir = path.join(tempDir, format);
+  fs.mkdirSync(formatDir, { recursive: true });
+
+  const normalizedClipPaths = [];
+  const audioSegmentPaths = [];
+
+  for (let i = 0; i < sharedPanels.length; i++) {
+    const panel = sharedPanels[i];
+    const index = panel.index;
+
+    const rawClipPath = path.join(formatDir, `clip_raw_${index}.mp4`);
+    const finalClipPath = path.join(formatDir, `clip_final_${index}.mp4`);
+    const textPath = path.join(formatDir, `caption_${index}.txt`);
+    const pauseAudioPath = path.join(formatDir, `pause_${index}.mp3`);
+
+    const captionForVideo = buildHookText(title, panel.caption, index);
+    fs.writeFileSync(textPath, captionForVideo, "utf8");
+
+    let duration = format === "youtube" ? 2.6 : 2.0;
+
+    if (usePanelVoices && panel.voicePath) {
+      duration = clamp(
+        panel.realAudioDuration + panelPause,
+        minPanelDuration,
+        maxPanelDuration
+      );
+
+      audioSegmentPaths.push(panel.voicePath);
+
+      if (panelPause > 0) {
+        createSilenceAudio(ffmpegPath, pauseAudioPath, panelPause);
+        audioSegmentPaths.push(pauseAudioPath);
+      }
+    } else {
+      const fallbackChars = Math.max(captionForVideo.length, 12);
+      const estimated = fallbackChars / (format === "youtube" ? 14 : 18);
+      duration = clamp(estimated, minPanelDuration, maxPanelDuration);
+    }
+
+    const { vfParts, mood } = buildAnimationFilter({
+      width,
+      height,
+      duration,
+      fps,
+      style: animationStyle,
+      caption: captionForVideo,
+      imagePrompt: panel.imagePrompt,
+      panelIndex: index,
+      format,
+    });
+
+    if (captionForVideo) {
+      vfParts.push(buildTextFilter(textPath, mood, format));
+    }
+
+    const vf = vfParts.join(",");
+
+    const result = spawnSync(
+      ffmpegPath,
+      [
+        "-y",
+        "-loop", "1",
+        "-i", panel.imagePath,
+        "-vf", vf,
+        "-t", String(duration),
+        "-r", String(fps),
+        "-pix_fmt", "yuv420p",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-an",
+        rawClipPath,
+      ],
+      {
+        encoding: "utf8",
+        shell: false,
+      }
+    );
+
+    if (result.error) {
+      throw new Error(
+        `No se pudo ejecutar ffmpeg para ${format} en panel ${index}: ${result.error.message}`
+      );
+    }
+
+    if (result.status !== 0) {
+      throw new Error(
+        `ffmpeg falló creando clip ${index} (${format}): ${result.stderr || "sin stderr"}`
+      );
+    }
+
+    reencodeClipForConcat(ffmpegPath, rawClipPath, finalClipPath, fps);
+    normalizedClipPaths.push(finalClipPath);
+  }
+
+  if (!normalizedClipPaths.length) {
+    throw new Error(`No se pudieron crear clips para formato ${format}`);
+  }
+
+  const finalVideoPath = path.join(formatDir, `final_${format}.mp4`);
+  concatMediaFiles(ffmpegPath, normalizedClipPaths, finalVideoPath, "video");
+
+  let outputToUpload = finalVideoPath;
+  let finalAudioPath = "";
+  const finalVideoWithAudioPath = path.join(formatDir, `final_${format}_with_audio.mp4`);
+
+  if (audioSegmentPaths.length > 0) {
+    finalAudioPath = path.join(formatDir, `final_${format}_voice.mp3`);
+    concatMediaFiles(ffmpegPath, audioSegmentPaths, finalAudioPath, "audio");
+
+    const mergeResult = spawnSync(
+      ffmpegPath,
+      [
+        "-y",
+        "-i", finalVideoPath,
+        "-i", finalAudioPath,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-shortest",
+        finalVideoWithAudioPath,
+      ],
+      {
+        encoding: "utf8",
+        shell: false,
+      }
+    );
+
+    if (mergeResult.error) {
+      throw new Error(
+        `No se pudo mezclar audio final (${format}): ${mergeResult.error.message}`
+      );
+    }
+
+    if (mergeResult.status !== 0) {
+      throw new Error(
+        `Error mezclando audio final (${format}): ${mergeResult.stderr || "sin stderr"}`
+      );
+    }
+
+    outputToUpload = finalVideoWithAudioPath;
+  }
+
+  const safeTitle = String(title || "manga")
+    .replace(/[^\w\s-]+/g, "")
+    .replace(/\s+/g, "_")
+    .toLowerCase();
+
+  const uploadRes = await cloudinary.uploader.upload(outputToUpload, {
+    resource_type: "video",
+    folder: "manga_videos",
+    public_id: `${safeTitle}_${profile.titleSuffix}_${Date.now()}`,
+  });
+
+  return {
+    format,
+    width,
+    height,
+    panelPause,
+    videoUrl: uploadRes.secure_url,
+    usedPanelVoices: audioSegmentPaths.length > 0,
+    panelCount: sharedPanels.length,
+    audioSegmentCount: audioSegmentPaths.length,
+  };
+}
+
 export async function POST(req) {
   try {
-    const { title, pages = [], format = "tiktok", audioUrl = "" } = await req.json();
+    const {
+      title,
+      pages = [],
+      formats = ["tiktok"],
+      animationStyle = "auto",
+      usePanelVoices = true,
+    } = await req.json();
 
     if (!pages.length) {
       return NextResponse.json(
@@ -114,19 +708,12 @@ export async function POST(req) {
       );
     }
 
+    const targetFormats = normalizeFormats(formats);
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "manga-video-"));
     const ffmpegPath = getFfmpegPath();
 
-    const isTikTok = format === "tiktok";
-    const width = isTikTok ? 1080 : 1920;
-    const height = isTikTok ? 1920 : 1080;
-
-    let audioDuration = 0;
-    let audioPath = "";
-
-    // Recolectar paneles válidos y medir texto total
     const panelData = [];
-    let totalChars = 0;
+    let globalIndex = 0;
 
     for (const page of pages) {
       const panels = Array.isArray(page.panels) ? page.panels : [];
@@ -135,16 +722,14 @@ export async function POST(req) {
         const imageUrl = panel.image || panel.imageUrl || "";
         if (!imageUrl) continue;
 
-        const caption = cleanText(panel.dialogue || "");
-        const charCount = Math.max(caption.length, 1);
+        globalIndex++;
 
         panelData.push({
+          index: globalIndex,
           imageUrl,
-          caption,
-          charCount,
+          caption: cleanText(panel.dialogue || ""),
+          imagePrompt: cleanText(panel.imagePrompt || ""),
         });
-
-        totalChars += charCount;
       }
     }
 
@@ -155,189 +740,37 @@ export async function POST(req) {
       );
     }
 
-    if (audioUrl) {
-      audioPath = path.join(tempDir, "voice.mp3");
-
-      console.log("🎵 Descargando audio:", audioUrl);
-      await downloadFile(audioUrl, audioPath);
-
-      audioDuration = getAudioDuration(ffmpegPath, audioPath);
-      console.log("⏱ Duración audio:", audioDuration);
-    }
-
-    const clipPaths = [];
-    let globalIndex = 0;
-
-    for (let i = 0; i < panelData.length; i++) {
-      const { imageUrl, caption, charCount } = panelData[i];
-
-      globalIndex++;
-
-      const imagePath = path.join(tempDir, `img_${globalIndex}.png`);
-      const clipPath = path.join(tempDir, `clip_${globalIndex}.mp4`);
-      const textPath = path.join(tempDir, `caption_${globalIndex}.txt`);
-
-      console.log("🖼 Descargando imagen:", imageUrl);
-      await downloadFile(imageUrl, imagePath);
-
-      fs.writeFileSync(textPath, caption, "utf8");
-
-      let duration = 3;
-
-      if (audioDuration > 0 && totalChars > 0) {
-        duration = audioDuration * (charCount / totalChars);
-      }
-
-      // mínimo para que no pase demasiado rápido
-      duration = Math.max(duration, 1.8);
-
-      const escapedTextPath = escapePathForFFmpeg(textPath);
-
-      const vfParts = [
-        `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
-        `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
-        `zoompan=z='min(zoom+0.0008,1.08)':d=${Math.round(duration * 30)}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-      ];
-
-      if (caption) {
-        vfParts.push(
-          `drawtext=textfile='${escapedTextPath}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=h-220:box=1:boxcolor=black@0.55:boxborderw=20`
-        );
-      }
-
-      const vf = vfParts.join(",");
-
-      const result = spawnSync(
-        ffmpegPath,
-        [
-          "-y",
-          "-loop", "1",
-          "-i", imagePath,
-          "-vf", vf,
-          "-t", String(duration),
-          "-r", "30",
-          "-pix_fmt", "yuv420p",
-          clipPath,
-        ],
-        {
-          encoding: "utf8",
-          shell: false,
-        }
-      );
-
-      if (result.error) {
-        console.error("❌ Error lanzando ffmpeg:", result.error);
-        throw new Error(
-          `No se pudo ejecutar ffmpeg. Revisa FFMPEG_PATH o el PATH del sistema. ${result.error.message}`
-        );
-      }
-
-      if (result.status !== 0) {
-        console.error("❌ ffmpeg stderr:", result.stderr);
-        console.error("❌ ffmpeg stdout:", result.stdout);
-        throw new Error(
-          `ffmpeg falló al crear clip ${globalIndex}: ${result.stderr || "sin stderr"}`
-        );
-      }
-
-      clipPaths.push(clipPath);
-    }
-
-    if (!clipPaths.length) {
-      return NextResponse.json(
-        { error: "No se encontraron imágenes válidas para el video" },
-        { status: 400 }
-      );
-    }
-
-    const listFile = path.join(tempDir, "concat.txt");
-    fs.writeFileSync(
-      listFile,
-      clipPaths.map((clip) => `file '${clip.replace(/\\/g, "/")}'`).join("\n"),
-      "utf8"
-    );
-
-    const finalVideoPath = path.join(tempDir, "final_video.mp4");
-
-    const concatResult = spawnSync(
+    const sharedPanels = await buildSharedPanelAssets(
+      tempDir,
       ffmpegPath,
-      [
-        "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", listFile,
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        finalVideoPath,
-      ],
-      {
-        encoding: "utf8",
-        shell: false,
-      }
+      panelData,
+      usePanelVoices
     );
 
-    if (concatResult.error) {
-      console.error("❌ Error lanzando ffmpeg concat:", concatResult.error);
-      throw new Error(
-        `No se pudo ejecutar ffmpeg al unir clips: ${concatResult.error.message}`
-      );
-    }
+    const generatedVideos = [];
 
-    if (concatResult.status !== 0) {
-      console.error("❌ concat stderr:", concatResult.stderr);
-      console.error("❌ concat stdout:", concatResult.stdout);
-      throw new Error(
-        `ffmpeg falló al unir clips: ${concatResult.stderr || "sin stderr"}`
-      );
-    }
+    for (const format of targetFormats) {
+      console.log("🎬 Generando formato:", format);
 
-    const videoWithAudioPath = path.join(tempDir, "final_with_audio.mp4");
-
-    if (audioUrl && audioPath) {
-      const mergeResult = spawnSync(
+      const result = await generateSingleFormatVideo({
+        tempDir,
         ffmpegPath,
-        [
-          "-y",
-          "-i", finalVideoPath,
-          "-i", audioPath,
-          "-c:v", "copy",
-          "-c:a", "aac",
-          "-shortest",
-          videoWithAudioPath,
-        ],
-        {
-          encoding: "utf8",
-          shell: false,
-        }
-      );
+        title,
+        sharedPanels,
+        format,
+        animationStyle,
+        usePanelVoices,
+      });
 
-      if (mergeResult.error) {
-        console.error("❌ Error lanzando ffmpeg merge:", mergeResult.error);
-        throw new Error(
-          `No se pudo ejecutar ffmpeg al mezclar audio: ${mergeResult.error.message}`
-        );
-      }
-
-      if (mergeResult.status !== 0) {
-        console.error("❌ merge stderr:", mergeResult.stderr);
-        console.error("❌ merge stdout:", mergeResult.stdout);
-        throw new Error(
-          `Error mezclando audio: ${mergeResult.stderr || "sin stderr"}`
-        );
-      }
+      generatedVideos.push(result);
     }
-
-    const outputToUpload = audioUrl ? videoWithAudioPath : finalVideoPath;
-
-    const uploadRes = await cloudinary.uploader.upload(outputToUpload, {
-      resource_type: "video",
-      folder: "manga_videos",
-      public_id: `${title.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
-    });
 
     return NextResponse.json({
       ok: true,
-      videoUrl: uploadRes.secure_url,
+      title,
+      panelCount: panelData.length,
+      formatsGenerated: targetFormats,
+      videos: generatedVideos,
     });
   } catch (err) {
     console.error("ERROR GENERATE VIDEO:", err);

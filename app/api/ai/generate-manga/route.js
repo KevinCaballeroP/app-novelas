@@ -19,6 +19,8 @@ const client = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+const TRACKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
+
 // ================= BUSCAR PERSONAJE =================
 async function findCharacter(mangaTitle, name) {
   return await Character.findOne({ mangaTitle, name });
@@ -55,7 +57,7 @@ function generatePairSeed(seedA, seedB) {
   return Number(String(minSeed) + String(maxSeed).slice(-4)) % 100000000;
 }
 
-function sanitizeTwoCharacterText(text) {
+function sanitizeMultiCharacterText(text) {
   return String(text || "")
     .replace(/holding hands/gi, "standing apart")
     .replace(/hold hands/gi, "standing apart")
@@ -181,6 +183,9 @@ same exact character as before
     anchor += `
 Cristian Uribe,
 young man,
+short dark hair,
+dark hair only,
+strong jawline,
 masculine face,
 broad shoulders,
 slim masculine body,
@@ -193,12 +198,27 @@ same exact character as before
     anchor += `
 Mefisto,
 female spiritual guide,
-cat ears,
+cat ears ALWAYS visible,
+cat ears clearly defined,
+no human ears without cat ears,
 long sapphire blue hair,
-emerald green eyes,
-feminine face,
-ethereal woman,
-same exact character as before
+blue hair only,
+never black hair,
+never brown hair,
+never blonde hair,
+never white hair,
+emerald green glowing eyes,
+green eyes only,
+ethereal feminine aura,
+spiritual particles,
+mystical female spirit,
+same exact face,
+same exact hairstyle,
+same exact eye color,
+same exact character as before,
+no identity drift,
+no alternate design,
+no different character
 `;
   }
 
@@ -241,9 +261,21 @@ same slim masculine body
 
   if (lowerName === "cristian") {
     anchor += `
+short dark hair visible from behind,
 recognizable masculine silhouette,
 same male outfit from previous panels,
 same slim masculine body
+`;
+  }
+
+  if (lowerName === "mefisto") {
+    anchor += `
+long sapphire blue hair visible from behind,
+cat ears visible from behind,
+recognizable feminine mystical silhouette,
+same ethereal robe design,
+same blue hair color,
+same slim feminine body
 `;
   }
 
@@ -381,13 +413,7 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
       referenceImage: charB.referenceImage || null,
     },
 
-    referenceImage:
-      charA.name?.toLowerCase() === "karol"
-        ? (charA.referenceImage || charB.referenceImage || null)
-        : charB.name?.toLowerCase() === "karol"
-          ? (charB.referenceImage || charA.referenceImage || null)
-          : (charA.referenceImage || null),
-
+    referenceImage: null,
     identityPrompt: null,
   };
 }
@@ -529,14 +555,20 @@ function buildFallbackCharacterProfile(cleanName, description = "") {
       ? "long straight chestnut brown hair"
       : lowerName === "kelvin"
         ? "short straight black hair"
-        : "",
+        : lowerName === "cristian"
+          ? "short dark hair"
+          : lowerName === "mefisto"
+            ? "long sapphire blue hair"
+            : "",
     face: isFemale
       ? "refined feminine face"
       : "masculine face, strong jawline",
     body: isFemale
       ? "slim feminine body"
       : "slim masculine body, broad shoulders",
-    default_clothing: "practical layered cultivator outfit, fully dressed",
+    default_clothing: lowerName === "mefisto"
+      ? "elegant mystical robes, fantasy guide clothing, fully dressed"
+      : "practical layered cultivator outfit, fully dressed",
     personality: "calm",
     archetype: "hero"
   };
@@ -555,9 +587,7 @@ function parseCharacterProfileJson(content, cleanName, description) {
 
   try {
     candidates.push(extractFirstJsonObject(raw));
-  } catch {
-    // seguimos con el raw completo
-  }
+  } catch {}
 
   candidates.push(raw);
   candidates = [...new Set(candidates.map(x => String(x || "").trim()).filter(Boolean))];
@@ -584,9 +614,7 @@ function parseCharacterProfileJson(content, cleanName, description) {
           personality: parsed.personality || fallbackProfile.personality,
           archetype: parsed.archetype || fallbackProfile.archetype,
         };
-      } catch {
-        // intentar siguiente reparación
-      }
+      } catch {}
     }
   }
 
@@ -662,27 +690,56 @@ async function createOrUpdateCharacter(mangaTitle, name, description, stylePrese
   const cleanName = normalizeName(name);
   const lowerName = cleanName.toLowerCase();
   const seed = generateCharacterSeed(cleanName);
+  const existingCharacter = await Character.findOne({ mangaTitle, name: cleanName });
 
   if (lowerName === "mefisto") {
     const identityPrompt = `
-(1girl:1.6),
+(1girl:1.7),
 solo,
 adult woman,
+Mefisto,
+
+STRICT CHARACTER IDENTITY,
+
 female spiritual guide,
-cat ears,
+cat ears ALWAYS visible,
+cat ears clearly defined,
+no human ears without cat ears,
+
 long sapphire blue hair,
+blue hair only,
+no black hair,
+no brown hair,
+no blonde hair,
+no white hair,
+
 emerald green glowing eyes,
-ethereal feminine aura,
-mystical female spirit,
-feminine face,
-natural female anatomy,
+green eyes only,
+no other eye color,
+
+ethereal mystical aura,
+spiritual energy surrounding body,
+glowing particles,
+fantasy spirit presence,
+
 slim feminine body,
 elegant mystical robes,
-fantasy guide entity,
+cultivator robe style,
+dark fantasy aesthetic,
+
+face must be feminine,
 no male traits,
+no androgynous face,
+
 same exact face,
 same exact hairstyle,
-recognizable character design
+same exact eye color,
+same exact character,
+
+NO IDENTITY DRIFT,
+NO ALTERNATIVE DESIGN,
+NO DIFFERENT CHARACTER,
+RECOGNIZABLE AS SAME CHARACTER
 `;
 
     return await Character.findOneAndUpdate(
@@ -691,15 +748,19 @@ recognizable character design
         $set: {
           identityPrompt,
           seed,
-          referenceImage: null,
           gender: "female",
           visualStylePreset: stylePreset,
-          profileVersion: 4
-        }
+          profileVersion: 7,
+          cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+          evolutionStage: existingCharacter?.evolutionStage || 1,
+        },
+        $setOnInsert: {
+          referenceImage: null,
+        },
       },
       {
         new: true,
-        upsert: true
+        upsert: true,
       }
     );
   }
@@ -710,19 +771,22 @@ recognizable character design
 solo,
 adult man,
 Cristian Uribe,
-masculine face,
+young rich adventurer,
+short dark hair,
+dark hair only,
 strong jawline,
+masculine face,
 broad shoulders,
 slim masculine body,
 clear male anatomy,
 dark eyes,
-elegant rich adventurer style,
+elegant wealthy adventurer clothing,
 fully dressed,
 story appropriate clothing,
 no female traits,
 no feminine traits,
 same exact face,
-same hairstyle,
+same exact hairstyle,
 recognizable male silhouette
 `;
 
@@ -732,15 +796,19 @@ recognizable male silhouette
         $set: {
           identityPrompt,
           seed,
-          referenceImage: null,
           gender: "male",
           visualStylePreset: stylePreset,
-          profileVersion: 4
-        }
+          profileVersion: 7,
+          cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+          evolutionStage: existingCharacter?.evolutionStage || 1,
+        },
+        $setOnInsert: {
+          referenceImage: null,
+        },
       },
       {
         new: true,
-        upsert: true
+        upsert: true,
       }
     );
   }
@@ -953,15 +1021,19 @@ no androgynous traits
       $set: {
         identityPrompt,
         seed,
-        referenceImage: null,
         gender,
         visualStylePreset: stylePreset,
-        profileVersion: 4
-      }
+        profileVersion: 7,
+        cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+        evolutionStage: existingCharacter?.evolutionStage || 1,
+      },
+      $setOnInsert: {
+        referenceImage: null,
+      },
     },
     {
       new: true,
-      upsert: true
+      upsert: true,
     }
   );
 }
@@ -1003,6 +1075,47 @@ function extractPossibleNames(text) {
   return [...new Set(filtered)];
 }
 
+function extractKnownCharacterNames(text) {
+  const t = String(text || "").toLowerCase();
+
+  const knownNames = [
+    "karol",
+    "cristian",
+    "kelvin",
+    "mefisto",
+    "uryan",
+    "juan"
+  ];
+
+  const found = [];
+
+  for (const name of knownNames) {
+    const regex = new RegExp(`\\b${name}\\b`, "i");
+    if (regex.test(t)) {
+      found.push(name.charAt(0).toUpperCase() + name.slice(1));
+    }
+  }
+
+  return [...new Set(found)];
+}
+
+function extractAllCharacterNames(text) {
+  const explicitNames = extractPossibleNames(text);
+  const knownNames = extractKnownCharacterNames(text);
+
+  return [...new Set([...explicitNames, ...knownNames].map(normalizeName).filter(Boolean))];
+}
+
+function extractTrackedCharacterNames(text) {
+  const found = extractAllCharacterNames(text);
+
+  return found.filter(name =>
+    TRACKED_CHARACTER_NAMES.some(
+      tracked => tracked.toLowerCase() === String(name).toLowerCase()
+    )
+  );
+}
+
 function prioritizeStoryCharacters(names = [], dialogueText = "", visualText = "") {
   const lowerDialogue = String(dialogueText || "").toLowerCase();
   const lowerVisual = String(visualText || "").toLowerCase();
@@ -1013,8 +1126,6 @@ function prioritizeStoryCharacters(names = [], dialogueText = "", visualText = "
   if (lowerDialogue.includes("kelvin") || lowerVisual.includes("kelvin")) priority.push("Kelvin");
   if (lowerDialogue.includes("cristian") || lowerVisual.includes("cristian")) priority.push("Cristian");
   if (lowerDialogue.includes("mefisto") || lowerVisual.includes("mefisto")) priority.push("Mefisto");
-  if (lowerDialogue.includes("uryan") || lowerVisual.includes("uryan")) priority.push("Uryan");
-  if (lowerDialogue.includes("juan") || lowerVisual.includes("juan")) priority.push("Juan");
 
   const finalNames = [];
 
@@ -1034,12 +1145,39 @@ function prioritizeStoryCharacters(names = [], dialogueText = "", visualText = "
   return finalNames;
 }
 
+function isStrongTwoCharacterScene(dialogueText = "", visualText = "") {
+  const text = `${dialogueText} ${visualText}`.toLowerCase();
+
+  const hasKarol = text.includes("karol");
+  const hasCristian = text.includes("cristian");
+  const hasKelvin = text.includes("kelvin");
+  const hasMefisto = text.includes("mefisto");
+
+  const pairCount = [hasKarol, hasCristian, hasKelvin, hasMefisto].filter(Boolean).length;
+
+  if (pairCount < 2) return false;
+
+  return (
+    text.includes(" y ") ||
+    text.includes(" junto a ") ||
+    text.includes(" con ") ||
+    text.includes(" conoció a ") ||
+    text.includes(" habló con ") ||
+    text.includes(" miró a ") ||
+    text.includes(" frente a ") ||
+    text.includes(" acompañada de ") ||
+    text.includes(" acompañado de ") ||
+    text.includes(" recordó a ") ||
+    text.includes(" corazón de ")
+  );
+}
+
 function inferSceneFocusFromNames(panelCharacters = [], visualText = "", dialogueText = "") {
   const explicit = Array.isArray(panelCharacters) ? panelCharacters.filter(Boolean) : [];
   if (explicit.length >= 2) return "two_characters";
   if (explicit.length === 1) return "single_character";
 
-  const names = extractPossibleNames(`${visualText} ${dialogueText}`);
+  const names = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
   const unique = [...new Set(names.map(n => normalizeName(n).toLowerCase()))];
 
   if (unique.length >= 2) return "two_characters";
@@ -1076,13 +1214,25 @@ async function generateImage(payload) {
   return data;
 }
 
-function getPanelComposition(panelKind, sceneFocus) {
+function getPanelComposition(panelKind, sceneFocus, storyMode = "tiktok") {
   const kind = String(panelKind || "").toLowerCase();
+  const isYoutube = storyMode === "youtube";
 
   if (kind === "panoramic_top") {
     return {
-      camera: "high wide panoramic shot",
-      composition: `
+      camera: isYoutube ? "cinematic wide establishing shot" : "high wide panoramic shot",
+      composition: isYoutube
+        ? `
+epic cinematic wide composition,
+horizontal establishing panel,
+large side breathing room,
+grand scale,
+deep perspective,
+clear left and right spacing,
+landscape dominance,
+small human figures if any
+`
+        : `
 epic panoramic composition,
 top establishing panel,
 very wide environment,
@@ -1097,8 +1247,21 @@ small human figures if any
 
   if (kind === "dialogue") {
     return {
-      camera: sceneFocus === "two_characters" ? "medium two-shot" : "medium shot",
-      composition: `
+      camera:
+        sceneFocus === "two_characters"
+          ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
+          : (isYoutube ? "cinematic medium shot" : "medium shot"),
+      composition: isYoutube
+        ? `
+horizontal dialogue composition,
+clear side spacing,
+balanced character placement,
+readable posing,
+conversation focus,
+clean silhouette,
+safe 16:9 framing
+`
+        : `
 dialogue panel composition,
 clear body separation,
 readable posing,
@@ -1112,8 +1275,18 @@ clean silhouette
 
   if (kind === "emotional_closeup") {
     return {
-      camera: "tight close-up portrait",
-      composition: `
+      camera: isYoutube ? "cinematic close-up portrait" : "tight close-up portrait",
+      composition: isYoutube
+        ? `
+emotional cinematic close-up,
+face readable with margin,
+eyes emphasized,
+controlled side space,
+minimal background,
+strong emotional readability,
+avoid edge crop
+`
+        : `
 emotional close-up panel,
 face dominant composition,
 eyes emphasized,
@@ -1126,8 +1299,18 @@ strong emotional readability
 
   if (kind === "action") {
     return {
-      camera: "dynamic action angle",
-      composition: `
+      camera: isYoutube ? "dynamic cinematic action shot" : "dynamic action angle",
+      composition: isYoutube
+        ? `
+horizontal action composition,
+motion emphasis,
+impact frame,
+dramatic depth,
+side space for movement,
+clear readable staging,
+safe cinematic framing
+`
+        : `
 action panel composition,
 motion emphasis,
 impact frame,
@@ -1140,8 +1323,20 @@ speed lines
   }
 
   return {
-    camera: sceneFocus === "environment" ? "wide cinematic shot" : "medium cinematic shot",
-    composition: `
+    camera: sceneFocus === "environment"
+      ? (isYoutube ? "cinematic wide shot" : "wide cinematic shot")
+      : sceneFocus === "two_characters"
+        ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
+        : (isYoutube ? "cinematic medium wide shot" : "medium cinematic shot"),
+    composition: isYoutube
+      ? `
+horizontal cinematic composition,
+balanced side margins,
+clear focal point,
+safe 16:9 framing,
+avoid tight edge cropping
+`
+      : `
 cinematic vertical composition,
 balanced framing,
 clear focal point
@@ -1163,7 +1358,7 @@ function isWorldExplanation(text) {
   );
 }
 
-function buildWorldExplanationPrompt(dialogueText, stylePreset) {
+function buildWorldExplanationPrompt(dialogueText, stylePreset, storyMode = "tiktok") {
   return `
 world explanation panel,
 fantasy information panel,
@@ -1175,16 +1370,98 @@ guild classification board,
 cultivation hierarchy visualized,
 ancient magical interface,
 clear symbolic worldbuilding,
+${storyMode === "youtube" ? "horizontal cinematic infographic composition," : "vertical infographic composition,"}
 ${stylePreset},
 ${dialogueText}
 `;
+}
+
+function getStoryProfile(contentProfile = "tiktok") {
+  const mode = String(contentProfile || "tiktok").toLowerCase();
+
+  if (mode === "youtube") {
+    return {
+      mode: "youtube",
+      dialogueRule: `
+- Dialogue can be slightly longer when needed for clarity.
+- Prefer 1 short sentence per panel, occasionally 2 if necessary.
+- Keep emotional clarity and narrative continuity.
+- Allow more atmosphere and worldbuilding.
+- Build progression: setup, tension, reveal, consequence.
+- End the last panel with anticipation or unresolved tension.
+`,
+      panelRule: `
+- Use balanced pacing.
+- Use fewer but more readable panels.
+- Allow breathing room for scenery, motion and character placement.
+- Prefer wider staging and cinematic readability.
+`,
+      imageRule: `
+- Compose scenes for horizontal cinematic framing.
+- Keep important characters centered with safe margins.
+- Avoid extreme close crops.
+- Prefer medium shot, wide shot, two-shot or cinematic wide shot.
+- Leave side space for 16:9 framing.
+- Do not push faces too close to the top or side edges.
+`,
+      storyboardFormat: "cinematic horizontal manga storyboard",
+      defaultPanelTag: "horizontal cinematic panel",
+    };
+  }
+
+  return {
+    mode: "tiktok",
+    dialogueRule: `
+- Each dialogue beat must be short and emotionally direct.
+- Prefer 3 to 8 words per panel when possible.
+- Avoid long exposition.
+- Start the sequence with an immediate hook.
+- Every 1 to 3 panels should create tension, mystery, danger or revelation.
+- Prefer punchy narration over descriptive paragraphs.
+- End the last panel with a strong cliffhanger or unresolved tension.
+`,
+    panelRule: `
+- Prefer more panels with shorter text.
+- Each panel should feel like a mini dramatic beat.
+- Prioritize retention and impact.
+- The first panel must hook immediately.
+`,
+    imageRule: `
+- Compose scenes for vertical mobile framing.
+- Prefer strong central focus.
+- Use close-ups, medium shots and vertical dramatic composition.
+- Keep the focal character large and readable.
+`,
+    storyboardFormat: "high-retention vertical short-form manga storyboard",
+    defaultPanelTag: "vertical webtoon panel",
+  };
+}
+
+function buildOpeningHook(title, prompt) {
+  const raw = String(prompt || "").trim();
+
+  if (!raw) {
+    return `Something terrible is about to happen in ${title}.`;
+  }
+
+  const firstSentence =
+    raw.split(/[.!?]/).map((x) => x.trim()).find(Boolean) || raw;
+
+  if (firstSentence.length <= 90) return firstSentence;
+
+  return `${firstSentence.slice(0, 90).trim()}...`;
 }
 
 export async function POST(req) {
   try {
     await connectToDB();
 
-    const { title, prompt, previousPages = [] } = await req.json();
+    const {
+      title,
+      prompt,
+      previousPages = [],
+      contentProfile = "tiktok",
+    } = await req.json();
 
     const safePrompt = String(prompt || "")
       .replace(/[\u201C\u201D]/g, '"')
@@ -1195,13 +1472,15 @@ export async function POST(req) {
 
     const globalStylePreset = getMangaStyle(title);
     const baseStyleSeed = generateStyleSeed(title);
+    const storyProfile = getStoryProfile(contentProfile);
+    const openingHook = buildOpeningHook(title, prompt);
 
     if (!prompt) {
       throw new Error("Prompt vacío");
     }
 
     const scriptPrompt = `
-Generate a dark seinen manga storyboard for vertical manhwa reading.
+Generate a dark seinen manga storyboard for ${storyProfile.storyboardFormat}.
 
 Return ONLY JSON:
 
@@ -1234,8 +1513,6 @@ Rules:
 - Never use unescaped double quotes inside dialogue or imagePrompt.
 - Replace quotes in dialogue with single quotes.
 - Do not include line breaks inside JSON string values.
-- Keep dialogue simple and short.
-- Avoid nested quotes.
 - dialogue is REQUIRED in every panel.
 - Never return empty dialogue.
 - If a panel is purely visual, add a short narration line anyway.
@@ -1251,24 +1528,40 @@ Rules:
 - characters must include only the characters that should appear in that panel.
 - sceneFocus="environment" for tower, city, world explanation, or pure landscape panels.
 - sceneFocus="single_character" when only one person should appear.
-- sceneFocus="two_characters" when exactly two characters should appear.
+- sceneFocus="two_characters" only when both characters are clearly part of the same moment.
 - panelKind="panoramic_top" for opening world panels or big environment moments.
 - panelKind="dialogue" for conversation scenes.
 - panelKind="emotional_closeup" for emotional face emphasis.
 - panelKind="action" for attack, tension, motion, impact.
 - Keep dark xianxia / cultivator atmosphere when appropriate.
 - Keep visual continuity.
-- Do not omit any important spoken sentence from the story request.
-- Prefer more panels instead of losing text.
 - Every panel must advance story + text together.
 - viewAngle="back" only when the story explicitly needs the character seen from behind.
 - viewAngle="front" by default for character introduction or identity-important scenes.
 - viewAngle="profile" for side conversation shots.
 - When introducing an important character for the first time, prefer front view.
-- When the dialogue mentions a relationship conflict between named characters, prefer showing those named characters in the panel.
 - If Karol, Kelvin, Cristian, or Mefisto are mentioned in dialogue, prioritize them visually when appropriate.
+- If two tracked characters are mentioned in the same interaction, they should appear together.
+- Never invent a third person in a two-character panel.
 - Avoid unrelated objects and empty shots.
 - The imagePrompt must visually match the dialogue.
+
+Platform storytelling rules:
+${storyProfile.dialogueRule}
+${storyProfile.panelRule}
+
+Visual framing rules:
+${storyProfile.imageRule}
+
+Mandatory hook rule:
+- The first panel must immediately create curiosity, danger, mystery, emotional tension or shock.
+- The first panel dialogue should feel like a hook, not like neutral exposition.
+- Use this hook idea as inspiration for the opening beat: "${openingHook}"
+
+Continuity rules:
+- Respect previous pages so the story does not restart.
+- Maintain emotional continuity and conflict progression.
+- Do not contradict prior panels.
 
 Previous pages:
 ${previousPages.length ? JSON.stringify(previousPages) : "None"}
@@ -1283,7 +1576,7 @@ ${safePrompt}
       messages: [{ role: "user", content: scriptPrompt }]
     });
 
-    let script = scriptRes.choices[0].message.content;
+    const script = scriptRes.choices[0].message.content;
     const storyboard = parseStoryboardJson(script);
 
     if (!storyboard?.pages || !Array.isArray(storyboard.pages)) {
@@ -1301,12 +1594,22 @@ ${safePrompt}
         panel.viewAngle = panel.viewAngle || detectViewAngle(panel.imagePrompt || "");
 
         if (!panel.dialogue) {
-          if (panel.type === "thought") {
-            panel.dialogue = "Un pensamiento silencioso pesa en el ambiente.";
-          } else if (panel.type === "speech") {
-            panel.dialogue = "…";
+          if (storyProfile.mode === "tiktok") {
+            if (panel.type === "thought") {
+              panel.dialogue = "Algo no estaba bien.";
+            } else if (panel.type === "speech") {
+              panel.dialogue = "Es demasiado tarde.";
+            } else {
+              panel.dialogue = "La torre respondió.";
+            }
           } else {
-            panel.dialogue = "La tensión del momento se extiende en silencio.";
+            if (panel.type === "thought") {
+              panel.dialogue = "Algo cambió en el ambiente.";
+            } else if (panel.type === "speech") {
+              panel.dialogue = "Esto apenas comienza.";
+            } else {
+              panel.dialogue = "La tensión crecía en silencio.";
+            }
           }
         }
       }
@@ -1320,21 +1623,49 @@ ${safePrompt}
         const visualText = panel.imagePrompt || "";
         const dialogueText = panel.dialogue || "";
 
-        let sceneFocus =
-          panel.sceneFocus ||
-          inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
-          detectSceneType(visualText);
+        const inferredNames = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
+        const rawPanelNames = Array.isArray(panel.characters) ? panel.characters : [];
+
+        let combinedNames = [...rawPanelNames, ...inferredNames]
+          .map((n) => normalizeName(n))
+          .filter(Boolean);
+
+        combinedNames = [...new Set(combinedNames)];
+        combinedNames = prioritizeStoryCharacters(combinedNames, dialogueText, visualText);
+
+        const forcedImportant = combinedNames.filter((n) =>
+          ["karol", "cristian", "kelvin", "mefisto"].includes(String(n).toLowerCase())
+        );
+
+        const uniqueDetected = [...new Set(combinedNames)];
+        const strongTwoCharacterScene = isStrongTwoCharacterScene(dialogueText, visualText);
+
+        let sceneFocus;
+
+        if (uniqueDetected.length >= 2 && strongTwoCharacterScene) {
+          sceneFocus = "two_characters";
+        } else if (uniqueDetected.length === 1) {
+          sceneFocus = "single_character";
+        } else {
+          sceneFocus =
+            panel.sceneFocus ||
+            inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
+            detectSceneType(visualText);
+        }
 
         let viewAngle = panel.viewAngle || detectViewAngle(visualText);
         const panelCharacters = Array.isArray(panel.characters) ? panel.characters : [];
-        const inferredNames = extractPossibleNames(`${visualText} ${dialogueText}`);
 
-        if (sceneFocus === "environment" && inferredNames.length >= 1) {
-          sceneFocus = inferredNames.length >= 2 ? "two_characters" : "single_character";
+        if (sceneFocus === "environment" && uniqueDetected.length >= 1) {
+          sceneFocus = "single_character";
         }
 
         if (sceneFocus === "environment" && hasCharacterPresence(visualText, panelCharacters)) {
           sceneFocus = "single_character";
+        }
+
+        if (uniqueDetected.length >= 2 && strongTwoCharacterScene) {
+          sceneFocus = "two_characters";
         }
 
         if (shouldForceFaceView(dialogueText, visualText, panelCharacters)) {
@@ -1348,20 +1679,30 @@ ${safePrompt}
           sceneFocus = "environment";
         }
 
-        const composition = getPanelComposition(panelKind, sceneFocus);
+        const composition = getPanelComposition(panelKind, sceneFocus, storyProfile.mode);
 
         let charactersData = [];
 
         if (sceneFocus !== "environment") {
           let names = [];
 
-          if (Array.isArray(panelCharacters) && panelCharacters.length > 0) {
+          if (uniqueDetected.length > 0) {
+            names = [...uniqueDetected];
+          } else if (Array.isArray(panelCharacters) && panelCharacters.length > 0) {
             names = panelCharacters;
           } else {
-            names = extractPossibleNames(`${visualText} ${dialogueText}`);
+            names = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
           }
 
           names = prioritizeStoryCharacters(names, dialogueText, visualText);
+
+          names = names.filter(n =>
+            ["karol", "cristian", "kelvin", "mefisto"].includes(String(n).toLowerCase())
+          );
+
+          if (forcedImportant.length >= 2) {
+            names = [...forcedImportant, ...names.filter(n => !forcedImportant.includes(n))];
+          }
 
           const limit = sceneFocus === "two_characters" ? 2 : 1;
           const uniqueNames = [...new Set(names.map(n => normalizeName(n)).filter(Boolean))];
@@ -1372,7 +1713,7 @@ ${safePrompt}
 
             let character = await findCharacter(title, name);
 
-            if (!character || (character.profileVersion || 1) < 4) {
+            if (!character || (character.profileVersion || 1) < 7) {
               character = await createOrUpdateCharacter(
                 title,
                 name,
@@ -1380,6 +1721,8 @@ ${safePrompt}
                 globalStylePreset
               );
             }
+
+            character = await ensureCharacterReference(character);
 
             const existsAlready = charactersData.some(
               c => c.name.toLowerCase() === character.name.toLowerCase()
@@ -1391,15 +1734,40 @@ ${safePrompt}
           }
         }
 
+        if (sceneFocus === "two_characters" && charactersData.length < 2) {
+          sceneFocus = "single_character";
+        }
+
+        const framingTag = storyProfile.defaultPanelTag;
+        const extraFramingRules =
+          storyProfile.mode === "youtube"
+            ? `
+horizontal cinematic framing,
+16:9 safe composition,
+important subjects centered,
+leave space on left and right,
+avoid close crop,
+avoid face near edges,
+avoid cutting head or body,
+wide readable staging
+`
+            : `
+vertical mobile framing,
+strong central composition,
+close readable focus,
+portrait-friendly staging
+`;
+
         let finalPrompt = "";
 
         if (isWorldExplanation(dialogueText)) {
           finalPrompt = `
-${buildWorldExplanationPrompt(dialogueText, stylePreset)},
+${buildWorldExplanationPrompt(dialogueText, stylePreset, storyProfile.mode)},
 ${composition.camera},
 ${composition.composition},
 ${composition.extra},
-vertical webtoon panel,
+${framingTag},
+${extraFramingRules},
 manga infographic style,
 clear symbolic composition
 `;
@@ -1429,6 +1797,8 @@ ${composition.camera},
 
 ${composition.composition},
 ${composition.extra},
+${framingTag},
+${extraFramingRules},
 
 cinematic landscape,
 high detail background,
@@ -1444,8 +1814,8 @@ background only
           const charA = charactersData[0];
           const charB = charactersData[1];
 
-          const safeVisualText = sanitizeTwoCharacterText(visualText);
-          const safeDialogueText = sanitizeTwoCharacterText(dialogueText);
+          const safeVisualText = sanitizeMultiCharacterText(visualText);
+          const safeDialogueText = sanitizeMultiCharacterText(dialogueText);
 
           const karolLockA = charA.name.toLowerCase() === "karol" ? `
 STRICT KAROL CANON:
@@ -1483,37 +1853,64 @@ never blue hair,
 do not change hair color under any lighting
 ` : "";
 
+          const mefistoLockA = charA.name.toLowerCase() === "mefisto" ? `
+STRICT MEFISTO CANON:
+cat ears ALWAYS visible,
+cat ears clearly defined,
+long sapphire blue hair,
+blue hair only,
+emerald green glowing eyes,
+green eyes only,
+ethereal mystical aura,
+spiritual particles visible,
+no other character design,
+not human generic girl
+` : "";
+
+          const mefistoLockB = charB.name.toLowerCase() === "mefisto" ? `
+STRICT MEFISTO CANON:
+cat ears ALWAYS visible,
+cat ears clearly defined,
+long sapphire blue hair,
+blue hair only,
+emerald green glowing eyes,
+green eyes only,
+ethereal mystical aura,
+spiritual particles visible,
+no other character design,
+not human generic girl
+` : "";
+
           finalPrompt = `
 exactly two characters,
+only two characters,
 both characters clearly visible,
 both faces visible,
 both heads visible,
+left character and right character,
 medium two-shot,
-shared frame,
-dual character composition,
-not a solo portrait,
-not a single-character shot,
-no random cropping,
-no legs-only shot,
-no feet-only shot,
-no torso-only shot,
-no chest-only crop,
+waist-up or full-body composition,
 clear separation between both characters,
-independent anatomy,
-independent limbs,
-no fused bodies,
-no merged arms,
+visible gap between bodies,
+no touching,
+hands separated,
+arms separated,
 no merged hands,
-no accidental extra limbs,
-no overlap hiding the second character,
+no merged arms,
+no fused bodies,
+no overlap hiding either character,
 no romantic pose,
 no intimate pose,
-no hand holding,
 no embrace,
+no hand holding,
+no cheek contact,
+no face touching,
+not a solo portrait,
+not a crowd,
+not three characters,
+balanced composition,
+clean silhouette separation,
 must visually represent the narrative described,
-must match the dialogue context,
-no unrelated objects,
-focus on the characters involved in the dialogue,
 
 ${stylePreset},
 
@@ -1521,6 +1918,7 @@ Character A:
 ${charA.identityPrompt}
 ${buildCharacterConsistencyAnchor(charA)}
 ${karolLockA}
+${mefistoLockA}
 ${charA.gender === "female"
   ? "female body, feminine face, no male traits"
   : "male body, masculine face, no female traits"}
@@ -1529,6 +1927,7 @@ Character B:
 ${charB.identityPrompt}
 ${buildCharacterConsistencyAnchor(charB)}
 ${karolLockB}
+${mefistoLockB}
 ${charB.gender === "female"
   ? "female body, feminine face, no male traits"
   : "male body, masculine face, no female traits"}
@@ -1557,6 +1956,8 @@ ${composition.camera},
 
 ${composition.composition},
 ${composition.extra},
+${framingTag},
+${extraFramingRules},
 
 cinematic manga storytelling,
 clear focal point,
@@ -1569,15 +1970,32 @@ both characters readable
 
           if (char.name.toLowerCase() === "mefisto") {
             mefistoBoost = `
-female entity,
-female presence,
-feminine voice embodiment,
-ethereal feminine aura,
-mystical female spirit,
-no male traits,
-cat ears visible,
-long sapphire hair,
-emerald green eyes,
+STRICT MEFISTO VISUAL LOCK,
+
+cat ears clearly visible,
+long sapphire blue hair,
+blue hair only,
+emerald glowing eyes,
+green eyes only,
+mystical aura visible,
+spiritual particles around,
+ethereal lighting,
+fantasy presence,
+
+NOT HUMAN GIRL,
+SPIRITUAL ENTITY,
+MYSTICAL BEING,
+
+no black hair,
+no brown hair,
+no blonde hair,
+no white hair,
+no casual outfit,
+must look like fantasy guide,
+
+high detail anime face,
+consistent identity,
+same exact character
 `;
           }
 
@@ -1614,6 +2032,8 @@ ${composition.camera},
 
 ${composition.composition},
 ${composition.extra},
+${framingTag},
+${extraFramingRules},
 
 full body or three-quarter back view,
 same character as previous panel,
@@ -1657,11 +2077,25 @@ must match the dialogue context,
 no unrelated objects,
 focus on the character involved in the dialogue,
 
+${storyProfile.mode === "youtube" ? `
+prefer medium shot or wider framing,
+full head visible,
+keep shoulders and upper torso comfortably inside frame,
+avoid oversized face crop,
+leave horizontal side breathing room
+` : `
+prefer portrait readability,
+character can be closer to camera,
+keep face strong and readable
+`}
+
 CAMERA:
 ${composition.camera},
 
 ${composition.composition},
 ${composition.extra},
+${framingTag},
+${extraFramingRules},
 
 clear side profile,
 recognizable hairstyle,
@@ -1710,13 +2144,27 @@ no unrelated objects,
 no empty environment unless explicitly requested,
 focus on the character involved in the dialogue,
 
+${storyProfile.mode === "youtube" ? `
+prefer medium shot or wider framing,
+full head visible,
+keep shoulders and upper torso comfortably inside frame,
+avoid oversized face crop,
+leave horizontal side breathing room,
+safe 16:9 readability
+` : `
+prefer portrait readability,
+character can be closer to camera,
+keep face strong and readable
+`}
+
 CAMERA:
 ${composition.camera},
 
 ${composition.composition},
 ${composition.extra},
+${framingTag},
+${extraFramingRules},
 
-vertical webtoon panel,
 clear focal point,
 balanced anatomy,
 high detail face,
@@ -1730,7 +2178,8 @@ ${visualText},
 ${composition.camera},
 ${composition.composition},
 ${composition.extra},
-vertical webtoon panel,
+${framingTag},
+${extraFramingRules},
 cinematic scene
 `;
         }
@@ -1792,6 +2241,8 @@ cinematic scene
 
     return NextResponse.json({
       title,
+      storyMode: storyProfile.mode,
+      contentProfile,
       pages
     });
   } catch (err) {
@@ -1871,8 +2322,7 @@ floating debris,
 dark wuxia atmosphere,
 seinen manga tone,
 dramatic lighting,
-epic scale,
-vertical manhwa composition
+epic scale
 `;
   }
 
