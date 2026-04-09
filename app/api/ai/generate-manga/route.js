@@ -20,10 +20,120 @@ const client = new Groq({
 });
 
 const TRACKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
+const LOCKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
+const CURRENT_PROFILE_VERSION = 8;
+
+// ================= HELPERS =================
+function normalizeName(name) {
+  return String(name || "").trim();
+}
+
+function normalizeNameLower(name) {
+  return normalizeName(name).toLowerCase();
+}
+
+function escapeRegex(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isLockedCharacterName(name) {
+  return LOCKED_CHARACTER_NAMES.some(
+    (n) => n.toLowerCase() === normalizeNameLower(name)
+  );
+}
+
+function dedupeNames(names = []) {
+  const seen = new Set();
+  const out = [];
+
+  for (const raw of names) {
+    const clean = normalizeName(raw);
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+
+  return out;
+}
+
+function sortCharactersForConsistency(characters = []) {
+  return [...characters].sort((a, b) => {
+    const aLocked = a?.referenceImage ? 1 : 0;
+    const bLocked = b?.referenceImage ? 1 : 0;
+
+    if (aLocked !== bLocked) return bLocked - aLocked;
+
+    const aName = normalizeName(a?.name);
+    const bName = normalizeName(b?.name);
+
+    return aName.localeCompare(bName);
+  });
+}
+
+function dedupeCharacters(characters = []) {
+  const byId = new Map();
+  const byName = new Map();
+
+  for (const char of sortCharactersForConsistency(characters)) {
+    if (!char) continue;
+
+    const idKey = char?._id ? String(char._id) : null;
+    const nameKey = normalizeNameLower(char?.name);
+
+    if (idKey && !byId.has(idKey)) {
+      byId.set(idKey, char);
+    }
+
+    if (nameKey && !byName.has(nameKey)) {
+      byName.set(nameKey, char);
+    } else if (nameKey) {
+      const existing = byName.get(nameKey);
+
+      const existingScore = existing?.referenceImage ? 2 : 0;
+      const currentScore = char?.referenceImage ? 2 : 0;
+
+      if (currentScore > existingScore) {
+        byName.set(nameKey, char);
+      }
+    }
+  }
+
+  return [...byName.values()];
+}
+
+function preferReferenceCharacter(characters = [], preferredName = null) {
+  if (!characters.length) return null;
+
+  if (preferredName) {
+    const exactWithRef = characters.find(
+      (c) =>
+        normalizeNameLower(c?.name) === normalizeNameLower(preferredName) &&
+        c?.referenceImage
+    );
+    if (exactWithRef) return exactWithRef;
+
+    const exactAny = characters.find(
+      (c) => normalizeNameLower(c?.name) === normalizeNameLower(preferredName)
+    );
+    if (exactAny) return exactAny;
+  }
+
+  const withRef = characters.find((c) => !!c?.referenceImage);
+  if (withRef) return withRef;
+
+  return characters[0];
+}
 
 // ================= BUSCAR PERSONAJE =================
 async function findCharacter(mangaTitle, name) {
-  return await Character.findOne({ mangaTitle, name });
+  const cleanName = normalizeName(name);
+  if (!cleanName) return null;
+
+  return await Character.findOne({
+    mangaTitle,
+    name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
+  });
 }
 
 // ================= GENERAR SEED =================
@@ -200,6 +310,10 @@ Mefisto,
 female spiritual guide,
 cat ears ALWAYS visible,
 cat ears clearly defined,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+no hidden cat ears,
 no human ears without cat ears,
 long sapphire blue hair,
 blue hair only,
@@ -216,6 +330,7 @@ same exact face,
 same exact hairstyle,
 same exact eye color,
 same exact character as before,
+not a generic anime girl,
 no identity drift,
 no alternate design,
 no different character
@@ -271,7 +386,8 @@ same slim masculine body
   if (lowerName === "mefisto") {
     anchor += `
 long sapphire blue hair visible from behind,
-cat ears visible from behind,
+cat ears clearly visible from behind,
+ears separated from hair,
 recognizable feminine mystical silhouette,
 same ethereal robe design,
 same blue hair color,
@@ -280,10 +396,6 @@ same slim feminine body
   }
 
   return anchor;
-}
-
-function normalizeName(name) {
-  return String(name || "").trim();
 }
 
 function getDuoType(charA, charB) {
@@ -296,6 +408,39 @@ function getDuoType(charA, charB) {
 }
 
 function buildSoloReferencePrompt(character) {
+  const isMefisto = String(character?.name || "").toLowerCase() === "mefisto";
+
+  if (isMefisto) {
+    return `
+solo portrait of Mefisto,
+female spiritual guide,
+cat ears ALWAYS visible,
+cat ears clearly defined,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+long sapphire blue hair,
+blue hair only,
+emerald green glowing eyes,
+green eyes only,
+ethereal mystical aura,
+spiritual particles,
+fantasy spiritual guide,
+elegant mystical robes,
+upper body,
+visible face,
+looking at viewer,
+centered composition,
+neutral mystical background,
+character reference sheet,
+same hairstyle,
+same face,
+same identity,
+recognizable cat-eared female spirit,
+not generic anime girl
+    `.trim();
+  }
+
   return `
 solo portrait of ${character.name},
 ${character.identityPrompt || ""},
@@ -313,10 +458,12 @@ recognizable character design
   `.trim();
 }
 
-async function ensureCharacterReference(character) {
+async function ensureCharacterReference(character, options = {}) {
   if (!character) return null;
 
-  if (character.referenceImage) {
+  const { forceRefresh = false } = options;
+
+  if (character.referenceImage && !forceRefresh) {
     return character;
   }
 
@@ -325,7 +472,7 @@ async function ensureCharacterReference(character) {
     seed: character.seed || null,
     gender: character.gender || null,
     identityPrompt: character.identityPrompt || "",
-    referenceImage: null,
+    referenceImage: character.referenceImage || null,
     characterCount: 1,
     duoType: null,
   };
@@ -357,7 +504,9 @@ async function ensureCharacterReference(character) {
 }
 
 async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null) {
-  if (!charactersInPanel || charactersInPanel.length === 0) {
+  const normalizedCharacters = dedupeCharacters(charactersInPanel || []);
+
+  if (!normalizedCharacters || normalizedCharacters.length === 0) {
     return {
       prompt: panel.imagePrompt,
       seed: null,
@@ -370,8 +519,8 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
     };
   }
 
-  if (charactersInPanel.length === 1) {
-    let char = charactersInPanel[0];
+  if (normalizedCharacters.length === 1) {
+    let char = preferReferenceCharacter(normalizedCharacters);
     char = await ensureCharacterReference(char);
 
     return {
@@ -386,8 +535,9 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
     };
   }
 
-  const charA = await ensureCharacterReference(charactersInPanel[0]);
-  const charB = await ensureCharacterReference(charactersInPanel[1]);
+  const sorted = sortCharactersForConsistency(normalizedCharacters).slice(0, 2);
+  const charA = await ensureCharacterReference(sorted[0]);
+  const charB = await ensureCharacterReference(sorted[1]);
 
   return {
     prompt: panel.imagePrompt,
@@ -690,20 +840,24 @@ async function createOrUpdateCharacter(mangaTitle, name, description, stylePrese
   const cleanName = normalizeName(name);
   const lowerName = cleanName.toLowerCase();
   const seed = generateCharacterSeed(cleanName);
-  const existingCharacter = await Character.findOne({ mangaTitle, name: cleanName });
+  const existingCharacter = await findCharacter(mangaTitle, cleanName);
 
   if (lowerName === "mefisto") {
     const identityPrompt = `
-(1girl:1.7),
+(1girl:1.8),
 solo,
 adult woman,
 Mefisto,
 
 STRICT CHARACTER IDENTITY,
-
 female spiritual guide,
+
 cat ears ALWAYS visible,
 cat ears clearly defined,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+no hidden cat ears,
 no human ears without cat ears,
 
 long sapphire blue hair,
@@ -721,15 +875,18 @@ ethereal mystical aura,
 spiritual energy surrounding body,
 glowing particles,
 fantasy spirit presence,
+divine spiritual guide presence,
 
 slim feminine body,
 elegant mystical robes,
 cultivator robe style,
 dark fantasy aesthetic,
+fully dressed,
 
 face must be feminine,
 no male traits,
 no androgynous face,
+not generic anime girl,
 
 same exact face,
 same exact hairstyle,
@@ -743,18 +900,23 @@ RECOGNIZABLE AS SAME CHARACTER
 `;
 
     return await Character.findOneAndUpdate(
-      { mangaTitle, name: cleanName },
+      {
+        mangaTitle,
+        name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
+      },
       {
         $set: {
           identityPrompt,
           seed,
           gender: "female",
           visualStylePreset: stylePreset,
-          profileVersion: 7,
+          profileVersion: CURRENT_PROFILE_VERSION,
+          lockIdentity: true,
           cultivationLevel: existingCharacter?.cultivationLevel || "D3",
           evolutionStage: existingCharacter?.evolutionStage || 1,
         },
         $setOnInsert: {
+          name: cleanName,
           referenceImage: null,
         },
       },
@@ -791,18 +953,23 @@ recognizable male silhouette
 `;
 
     return await Character.findOneAndUpdate(
-      { mangaTitle, name: cleanName },
+      {
+        mangaTitle,
+        name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
+      },
       {
         $set: {
           identityPrompt,
           seed,
           gender: "male",
           visualStylePreset: stylePreset,
-          profileVersion: 7,
+          profileVersion: CURRENT_PROFILE_VERSION,
+          lockIdentity: true,
           cultivationLevel: existingCharacter?.cultivationLevel || "D3",
           evolutionStage: existingCharacter?.evolutionStage || 1,
         },
         $setOnInsert: {
+          name: cleanName,
           referenceImage: null,
         },
       },
@@ -1016,18 +1183,23 @@ no androgynous traits
   }
 
   return await Character.findOneAndUpdate(
-    { mangaTitle, name: cleanName },
+    {
+      mangaTitle,
+      name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
+    },
     {
       $set: {
         identityPrompt,
         seed,
         gender,
         visualStylePreset: stylePreset,
-        profileVersion: 7,
+        profileVersion: CURRENT_PROFILE_VERSION,
+        lockIdentity: isLockedCharacterName(cleanName),
         cultivationLevel: existingCharacter?.cultivationLevel || "D3",
         evolutionStage: existingCharacter?.evolutionStage || 1,
       },
       $setOnInsert: {
+        name: cleanName,
         referenceImage: null,
       },
     },
@@ -1630,14 +1802,14 @@ ${safePrompt}
           .map((n) => normalizeName(n))
           .filter(Boolean);
 
-        combinedNames = [...new Set(combinedNames)];
+        combinedNames = dedupeNames(combinedNames);
         combinedNames = prioritizeStoryCharacters(combinedNames, dialogueText, visualText);
 
         const forcedImportant = combinedNames.filter((n) =>
           ["karol", "cristian", "kelvin", "mefisto"].includes(String(n).toLowerCase())
         );
 
-        const uniqueDetected = [...new Set(combinedNames)];
+        const uniqueDetected = dedupeNames(combinedNames);
         const strongTwoCharacterScene = isStrongTwoCharacterScene(dialogueText, visualText);
 
         let sceneFocus;
@@ -1695,8 +1867,7 @@ ${safePrompt}
           }
 
           names = prioritizeStoryCharacters(names, dialogueText, visualText);
-
-          names = names.filter(n =>
+          names = names.filter((n) =>
             ["karol", "cristian", "kelvin", "mefisto"].includes(String(n).toLowerCase())
           );
 
@@ -1705,15 +1876,15 @@ ${safePrompt}
           }
 
           const limit = sceneFocus === "two_characters" ? 2 : 1;
-          const uniqueNames = [...new Set(names.map(n => normalizeName(n)).filter(Boolean))];
+          const uniqueNames = dedupeNames(names).slice(0, limit);
 
-          for (const rawName of uniqueNames.slice(0, limit)) {
+          for (const rawName of uniqueNames) {
             const name = normalizeName(rawName);
             if (!name) continue;
 
             let character = await findCharacter(title, name);
 
-            if (!character || (character.profileVersion || 1) < 7) {
+            if (!character || (character.profileVersion || 1) < CURRENT_PROFILE_VERSION) {
               character = await createOrUpdateCharacter(
                 title,
                 name,
@@ -1724,18 +1895,40 @@ ${safePrompt}
 
             character = await ensureCharacterReference(character);
 
-            const existsAlready = charactersData.some(
-              c => c.name.toLowerCase() === character.name.toLowerCase()
-            );
-
-            if (!existsAlready) {
-              charactersData.push(character);
-            }
+            charactersData.push(character);
           }
+
+          charactersData = dedupeCharacters(charactersData);
         }
 
         if (sceneFocus === "two_characters" && charactersData.length < 2) {
           sceneFocus = "single_character";
+
+          const preferredSingleName =
+            uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
+            uniqueDetected[0] ||
+            null;
+
+          const preferredSingleCharacter = preferReferenceCharacter(
+            charactersData,
+            preferredSingleName
+          );
+
+          charactersData = preferredSingleCharacter ? [preferredSingleCharacter] : [];
+        }
+
+        if (sceneFocus === "single_character" && charactersData.length > 1) {
+          const preferredSingleName =
+            uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
+            uniqueDetected[0] ||
+            null;
+
+          const preferredSingleCharacter = preferReferenceCharacter(
+            charactersData,
+            preferredSingleName
+          );
+
+          charactersData = preferredSingleCharacter ? [preferredSingleCharacter] : charactersData.slice(0, 1);
         }
 
         const framingTag = storyProfile.defaultPanelTag;
@@ -1811,8 +2004,9 @@ spiritual worldbuilding,
 background only
 `;
         } else if (sceneFocus === "two_characters" && charactersData.length >= 2) {
-          const charA = charactersData[0];
-          const charB = charactersData[1];
+          const sortedPair = sortCharactersForConsistency(charactersData).slice(0, 2);
+          const charA = sortedPair[0];
+          const charB = sortedPair[1];
 
           const safeVisualText = sanitizeMultiCharacterText(visualText);
           const safeDialogueText = sanitizeMultiCharacterText(dialogueText);
@@ -1857,6 +2051,10 @@ do not change hair color under any lighting
 STRICT MEFISTO CANON:
 cat ears ALWAYS visible,
 cat ears clearly defined,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+no hidden cat ears,
 long sapphire blue hair,
 blue hair only,
 emerald green glowing eyes,
@@ -1871,6 +2069,10 @@ not human generic girl
 STRICT MEFISTO CANON:
 cat ears ALWAYS visible,
 cat ears clearly defined,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+no hidden cat ears,
 long sapphire blue hair,
 blue hair only,
 emerald green glowing eyes,
@@ -1965,18 +2167,31 @@ balanced anatomy,
 both characters readable
 `;
         } else if (charactersData.length >= 1) {
-          const char = charactersData[0];
+          const preferredSingleName =
+            uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
+            charactersData[0]?.name ||
+            null;
+
+          const char = preferReferenceCharacter(charactersData, preferredSingleName);
           let mefistoBoost = "";
 
           if (char.name.toLowerCase() === "mefisto") {
             mefistoBoost = `
 STRICT MEFISTO VISUAL LOCK,
 
+cat ears ALWAYS visible,
 cat ears clearly visible,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+no hidden cat ears,
+
 long sapphire blue hair,
 blue hair only,
+
 emerald glowing eyes,
 green eyes only,
+
 mystical aura visible,
 spiritual particles around,
 ethereal lighting,
@@ -1995,7 +2210,8 @@ must look like fantasy guide,
 
 high detail anime face,
 consistent identity,
-same exact character
+same exact character,
+use the same established reference identity
 `;
           }
 
@@ -2201,8 +2417,8 @@ cinematic scene
         } else {
           const charactersForPayload =
             sceneFocus === "two_characters"
-              ? charactersData.slice(0, 2)
-              : charactersData.slice(0, 1);
+              ? sortCharactersForConsistency(dedupeCharacters(charactersData)).slice(0, 2)
+              : [preferReferenceCharacter(dedupeCharacters(charactersData))].filter(Boolean);
 
           payload = await buildGenerationPayload(
             {
