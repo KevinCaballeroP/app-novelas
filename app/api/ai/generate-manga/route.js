@@ -21,7 +21,7 @@ const client = new Groq({
 
 const TRACKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
 const LOCKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
-const CURRENT_PROFILE_VERSION = 8;
+const CURRENT_PROFILE_VERSION = 9;
 
 // ================= HELPERS =================
 function normalizeName(name) {
@@ -226,8 +226,198 @@ function hasCharacterPresence(text, characters = []) {
     t.includes("chica") ||
     t.includes("joven") ||
     t.includes("persona") ||
-    t.includes("character")
+    t.includes("character") ||
+    t.includes("disciple") ||
+    t.includes("warrior") ||
+    t.includes("master")
   );
+}
+
+function detectEnvironmentKeywords(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  const map = [
+    { key: "tower", words: ["tower", "torre", "torres"] },
+    { key: "arena", words: ["arena", "coliseo", "stadium", "battlefield", "campo de batalla"] },
+    { key: "sect", words: ["sect", "secta", "temple", "palace", "clan hall", "headquarters"] },
+    { key: "forest", words: ["forest", "bosque", "woods"] },
+    { key: "mountain", words: ["mountain", "montaña", "montañas", "peak", "cumbre"] },
+    { key: "city", words: ["city", "ciudad", "village", "pueblo"] },
+    { key: "sky", words: ["sky", "cielo", "clouds", "storm", "tormenta"] },
+    { key: "throne_room", words: ["throne room", "salón del trono", "royal hall", "grand hall"] },
+    { key: "hall", words: ["hall", "salón", "pasillo", "corridor"] },
+    { key: "ruins", words: ["ruins", "ruinas", "ancient ruins"] },
+  ];
+
+  return map
+    .filter(item => item.words.some(w => t.includes(w)))
+    .map(item => item.key);
+}
+
+function detectObjectKeywords(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  const map = [
+    { key: "weapon", words: ["weapon", "arma", "sword", "espada", "blade", "lanza", "spear", "dagger", "katana"] },
+    { key: "lights", words: ["lights", "luces", "glow", "glowing lights", "floating lights", "orbs", "brillos", "resplandor"] },
+    { key: "artifact", words: ["artifact", "artefacto", "relic", "reliquia"] },
+    { key: "portal", words: ["portal", "gate", "puerta dimensional"] },
+    { key: "altar", words: ["altar", "ritual altar"] },
+    { key: "book", words: ["book", "libro", "manual", "scroll", "pergamino"] },
+    { key: "chain", words: ["chain", "cadena", "chains", "cadenas"] },
+    { key: "crystal", words: ["crystal", "cristal", "gem", "gema"] },
+  ];
+
+  return map
+    .filter(item => item.words.some(w => t.includes(w)))
+    .map(item => item.key);
+}
+
+function detectGroupScene(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  return (
+    t.includes("group") ||
+    t.includes("grupo") ||
+    t.includes("crowd") ||
+    t.includes("multitud") ||
+    t.includes("several people") ||
+    t.includes("varios") ||
+    t.includes("many disciples") ||
+    t.includes("disciples") ||
+    t.includes("sect members") ||
+    t.includes("army") ||
+    t.includes("ejército") ||
+    t.includes("many warriors") ||
+    t.includes("multiple figures")
+  );
+}
+
+function buildEnvironmentDetails(text = "") {
+  const envs = detectEnvironmentKeywords(text);
+  const parts = [];
+
+  if (envs.includes("tower")) {
+    parts.push("massive ancient tower, colossal vertical structure, dominant architectural presence");
+  }
+  if (envs.includes("arena")) {
+    parts.push("battle arena, circular stone battlefield, wide combat ground");
+  }
+  if (envs.includes("sect")) {
+    parts.push("mystical sect headquarters, ancient eastern architecture, ceremonial halls");
+  }
+  if (envs.includes("forest")) {
+    parts.push("dark mystical forest, dense trees, spiritual fog");
+  }
+  if (envs.includes("mountain")) {
+    parts.push("towering mountain range, sacred peaks, dramatic scale");
+  }
+  if (envs.includes("city")) {
+    parts.push("fantasy cultivator city, ancient streets, eastern rooftops");
+  }
+  if (envs.includes("sky")) {
+    parts.push("dramatic sky, glowing clouds, mystical atmosphere");
+  }
+  if (envs.includes("throne_room")) {
+    parts.push("grand throne room, monumental hall, royal dark fantasy architecture");
+  }
+  if (envs.includes("hall")) {
+    parts.push("large ceremonial hall, detailed interior architecture");
+  }
+  if (envs.includes("ruins")) {
+    parts.push("ancient ruins, broken stone structures, old mystical remains");
+  }
+
+  return parts.join(", ");
+}
+
+function buildObjectDetails(text = "") {
+  const objs = detectObjectKeywords(text);
+  const parts = [];
+
+  if (objs.includes("weapon")) {
+    parts.push("prominent weapon in frame, detailed blade design, mystical metal reflections");
+  }
+  if (objs.includes("lights")) {
+    parts.push("floating spiritual lights, glowing particles, luminous magical atmosphere");
+  }
+  if (objs.includes("artifact")) {
+    parts.push("ancient magical artifact, detailed relic, mysterious power aura");
+  }
+  if (objs.includes("portal")) {
+    parts.push("glowing dimensional portal, mystical gateway, energy distortion");
+  }
+  if (objs.includes("altar")) {
+    parts.push("ritual altar, engraved stone, spiritual energy focus");
+  }
+  if (objs.includes("book")) {
+    parts.push("ancient book or scroll, arcane symbols, mystical manuscript");
+  }
+  if (objs.includes("chain")) {
+    parts.push("visible chains, metallic detail, ominous symbolic restraint");
+  }
+  if (objs.includes("crystal")) {
+    parts.push("glowing crystal, luminous gem core, magical refraction");
+  }
+
+  return parts.join(", ");
+}
+
+function buildCrowdSupportPrompt(text = "") {
+  if (!detectGroupScene(text)) return "";
+
+  return `
+several background figures,
+group presence,
+supporting crowd silhouettes,
+disciples in the background,
+multiple people visible,
+scene must feel populated,
+do not make it a solo portrait
+`;
+}
+
+function inferNarrativeVisualFocus({
+  visualText = "",
+  dialogueText = "",
+  panelCharacters = []
+}) {
+  const combined = `${visualText} ${dialogueText}`.toLowerCase();
+  const envs = detectEnvironmentKeywords(combined);
+  const objs = detectObjectKeywords(combined);
+  const charCount = Array.isArray(panelCharacters) ? panelCharacters.length : 0;
+  const trackedCount = extractTrackedCharacterNames(combined).length;
+  const totalChars = Math.max(charCount, trackedCount);
+
+  if (detectGroupScene(combined) || totalChars >= 3) {
+    return "group_scene";
+  }
+
+  if (envs.length && totalChars >= 1) {
+    return "character_in_environment";
+  }
+
+  if (envs.length) {
+    return "environment";
+  }
+
+  if (objs.length && totalChars === 0) {
+    return "object_focus";
+  }
+
+  if (objs.length && totalChars >= 1) {
+    return "character_in_environment";
+  }
+
+  if (totalChars >= 2) {
+    return "two_characters";
+  }
+
+  if (totalChars === 1) {
+    return "single_character";
+  }
+
+  return null;
 }
 
 function buildCharacterConsistencyAnchor(character) {
@@ -895,7 +1085,6 @@ same exact character,
 
 NO IDENTITY DRIFT,
 NO ALTERNATIVE DESIGN,
-NO DIFFERENT CHARACTER,
 RECOGNIZABLE AS SAME CHARACTER
 `;
 
@@ -1256,7 +1445,9 @@ function extractKnownCharacterNames(text) {
     "kelvin",
     "mefisto",
     "uryan",
-    "juan"
+    "juan",
+    "siete",
+    "amanecer"
   ];
 
   const found = [];
@@ -1346,12 +1537,14 @@ function isStrongTwoCharacterScene(dialogueText = "", visualText = "") {
 
 function inferSceneFocusFromNames(panelCharacters = [], visualText = "", dialogueText = "") {
   const explicit = Array.isArray(panelCharacters) ? panelCharacters.filter(Boolean) : [];
+  if (explicit.length >= 3) return "group_scene";
   if (explicit.length >= 2) return "two_characters";
   if (explicit.length === 1) return "single_character";
 
   const names = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
   const unique = [...new Set(names.map(n => normalizeName(n).toLowerCase()))];
 
+  if (unique.length >= 3) return "group_scene";
   if (unique.length >= 2) return "two_characters";
   if (unique.length === 1) return "single_character";
 
@@ -1422,7 +1615,9 @@ small human figures if any
       camera:
         sceneFocus === "two_characters"
           ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
-          : (isYoutube ? "cinematic medium shot" : "medium shot"),
+          : sceneFocus === "character_in_environment"
+            ? (isYoutube ? "cinematic medium wide shot" : "medium wide shot")
+            : (isYoutube ? "cinematic medium shot" : "medium shot"),
       composition: isYoutube
         ? `
 horizontal dialogue composition,
@@ -1495,11 +1690,16 @@ speed lines
   }
 
   return {
-    camera: sceneFocus === "environment"
-      ? (isYoutube ? "cinematic wide shot" : "wide cinematic shot")
-      : sceneFocus === "two_characters"
-        ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
-        : (isYoutube ? "cinematic medium wide shot" : "medium cinematic shot"),
+    camera:
+      sceneFocus === "environment"
+        ? (isYoutube ? "cinematic wide shot" : "wide cinematic shot")
+        : sceneFocus === "character_in_environment"
+          ? (isYoutube ? "cinematic medium wide shot" : "medium wide shot")
+          : sceneFocus === "two_characters"
+            ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
+            : sceneFocus === "group_scene"
+              ? (isYoutube ? "cinematic wide group shot" : "wide group shot")
+              : (isYoutube ? "cinematic medium wide shot" : "medium cinematic shot"),
     composition: isYoutube
       ? `
 horizontal cinematic composition,
@@ -1575,6 +1775,7 @@ function getStoryProfile(contentProfile = "tiktok") {
 - Prefer medium shot, wide shot, two-shot or cinematic wide shot.
 - Leave side space for 16:9 framing.
 - Do not push faces too close to the top or side edges.
+- If the story mentions a location, architecture, weapon, altar, lights, portal or environmental feature, it must be visible.
 `,
       storyboardFormat: "cinematic horizontal manga storyboard",
       defaultPanelTag: "horizontal cinematic panel",
@@ -1603,6 +1804,7 @@ function getStoryProfile(contentProfile = "tiktok") {
 - Prefer strong central focus.
 - Use close-ups, medium shots and vertical dramatic composition.
 - Keep the focal character large and readable.
+- If the story mentions a tower, arena, sect, weapon, altar, portal, lights or other narrative object, it must still be visible.
 `,
     storyboardFormat: "high-retention vertical short-form manga storyboard",
     defaultPanelTag: "vertical webtoon panel",
@@ -1666,7 +1868,7 @@ Return ONLY JSON:
           "dialogue":"",
           "imagePrompt":"",
           "characters":[],
-          "sceneFocus":"environment | single_character | two_characters",
+          "sceneFocus":"environment | object_focus | single_character | two_characters | group_scene | character_in_environment",
           "panelKind":"panoramic_top | dialogue | emotional_closeup | action | standard",
           "viewAngle":"front | profile | back"
         }
@@ -1698,12 +1900,15 @@ Rules:
 - speech panels must still contain meaningful text in "dialogue".
 - imagePrompt must describe ONLY what is visible.
 - characters must include only the characters that should appear in that panel.
-- sceneFocus="environment" for tower, city, world explanation, or pure landscape panels.
-- sceneFocus="single_character" when only one person should appear.
+- sceneFocus="environment" for tower, city, world explanation, landscape, arena, sect architecture, temple, palace or place-focused panels.
+- sceneFocus="object_focus" for weapon, relic, portal, lights, altar, book or other important narrative object.
+- sceneFocus="single_character" when only one person should appear and the setting is secondary.
+- sceneFocus="character_in_environment" when a named or important character appears but the location, architecture or object must also be visible.
 - sceneFocus="two_characters" only when both characters are clearly part of the same moment.
+- sceneFocus="group_scene" when several disciples, sect members, a crowd or more than two figures matter.
 - panelKind="panoramic_top" for opening world panels or big environment moments.
 - panelKind="dialogue" for conversation scenes.
-- panelKind="emotional_closeup" for emotional face emphasis.
+- panelKind="emotional_closeup" for emotional face emphasis only when the place/object is not the main point.
 - panelKind="action" for attack, tension, motion, impact.
 - Keep dark xianxia / cultivator atmosphere when appropriate.
 - Keep visual continuity.
@@ -1717,6 +1922,14 @@ Rules:
 - Never invent a third person in a two-character panel.
 - Avoid unrelated objects and empty shots.
 - The imagePrompt must visually match the dialogue.
+- If the panel mentions a tower, the tower must be visible.
+- If the panel mentions an arena, the arena must be visible.
+- If the panel mentions a sect or temple, the sect architecture must be visible.
+- If the panel mentions an altar, the altar must be visible.
+- If the panel mentions a weapon, the weapon must be visible.
+- If the panel mentions lights, glowing particles or floating lights, they must be visible.
+- If the panel mentions several people, the scene must not become a solo portrait.
+- Do not reduce environment scenes to only a big face close-up.
 
 Platform storytelling rules:
 ${storyProfile.dialogueRule}
@@ -1812,28 +2025,25 @@ ${safePrompt}
         const uniqueDetected = dedupeNames(combinedNames);
         const strongTwoCharacterScene = isStrongTwoCharacterScene(dialogueText, visualText);
 
-        let sceneFocus;
-
-        if (uniqueDetected.length >= 2 && strongTwoCharacterScene) {
-          sceneFocus = "two_characters";
-        } else if (uniqueDetected.length === 1) {
-          sceneFocus = "single_character";
-        } else {
-          sceneFocus =
-            panel.sceneFocus ||
-            inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
-            detectSceneType(visualText);
-        }
+        let sceneFocus =
+          inferNarrativeVisualFocus({
+            visualText,
+            dialogueText,
+            panelCharacters: panel.characters
+          }) ||
+          panel.sceneFocus ||
+          inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
+          detectSceneType(visualText);
 
         let viewAngle = panel.viewAngle || detectViewAngle(visualText);
         const panelCharacters = Array.isArray(panel.characters) ? panel.characters : [];
 
         if (sceneFocus === "environment" && uniqueDetected.length >= 1) {
-          sceneFocus = "single_character";
+          sceneFocus = "character_in_environment";
         }
 
         if (sceneFocus === "environment" && hasCharacterPresence(visualText, panelCharacters)) {
-          sceneFocus = "single_character";
+          sceneFocus = "character_in_environment";
         }
 
         if (uniqueDetected.length >= 2 && strongTwoCharacterScene) {
@@ -1841,7 +2051,14 @@ ${safePrompt}
         }
 
         if (shouldForceFaceView(dialogueText, visualText, panelCharacters)) {
-          viewAngle = "front";
+          if (
+            sceneFocus !== "environment" &&
+            sceneFocus !== "character_in_environment" &&
+            sceneFocus !== "object_focus" &&
+            sceneFocus !== "group_scene"
+          ) {
+            viewAngle = "front";
+          }
         }
 
         const panelKind = panel.panelKind || "standard";
@@ -1855,7 +2072,10 @@ ${safePrompt}
 
         let charactersData = [];
 
-        if (sceneFocus !== "environment") {
+        if (
+          sceneFocus !== "environment" &&
+          sceneFocus !== "object_focus"
+        ) {
           let names = [];
 
           if (uniqueDetected.length > 0) {
@@ -1875,7 +2095,7 @@ ${safePrompt}
             names = [...forcedImportant, ...names.filter(n => !forcedImportant.includes(n))];
           }
 
-          const limit = sceneFocus === "two_characters" ? 2 : 1;
+          const limit = sceneFocus === "group_scene" ? 2 : sceneFocus === "two_characters" ? 2 : 1;
           const uniqueNames = dedupeNames(names).slice(0, limit);
 
           for (const rawName of uniqueNames) {
@@ -1902,19 +2122,7 @@ ${safePrompt}
         }
 
         if (sceneFocus === "two_characters" && charactersData.length < 2) {
-          sceneFocus = "single_character";
-
-          const preferredSingleName =
-            uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
-            uniqueDetected[0] ||
-            null;
-
-          const preferredSingleCharacter = preferReferenceCharacter(
-            charactersData,
-            preferredSingleName
-          );
-
-          charactersData = preferredSingleCharacter ? [preferredSingleCharacter] : [];
+          sceneFocus = "character_in_environment";
         }
 
         if (sceneFocus === "single_character" && charactersData.length > 1) {
@@ -1965,25 +2173,33 @@ manga infographic style,
 clear symbolic composition
 `;
         } else if (sceneFocus === "environment") {
+          const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+          const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
+          const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
+
           finalPrompt = `
-ENVIRONMENT ONLY,
-NO HUMANS,
-NO PEOPLE,
-NO CHARACTER,
-NO CHARACTERS,
-NO PERSON,
-NO CULTIVATOR,
-NO FIGURE,
-NO BODY,
-NO FACE,
-NO HUMAN SILHOUETTE,
-EMPTY LANDSCAPE,
-EMPTY ENVIRONMENT,
+ENVIRONMENT DOMINANT PANEL,
+do not reduce the panel to a portrait,
+the place is the main subject,
+show the location clearly,
+show architecture clearly,
+show narrative objects if mentioned,
+wide shot,
+establishing shot preferred,
 
 ${stylePreset},
 
 SCENE:
-${visualText},
+${visualText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+GROUP ATMOSPHERE:
+${crowdSupport}
 
 CAMERA:
 ${composition.camera},
@@ -1997,11 +2213,101 @@ cinematic landscape,
 high detail background,
 dark mystical atmosphere,
 ancient colossal towers,
-massive monolithic towers,
 world-scale architecture,
-empty world view,
 spiritual worldbuilding,
-background only
+must visually represent the narrative described,
+if the story mentions a tower, the tower must be visible,
+if the story mentions a sect, the sect architecture must be visible,
+if the story mentions an arena, the arena must be visible,
+if the story mentions lights, they must be visible,
+if the story mentions a weapon or altar, it must be visible
+`;
+        } else if (sceneFocus === "object_focus") {
+          const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+          const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
+
+          finalPrompt = `
+object-focused narrative panel,
+important object must dominate the frame,
+no unnecessary face close-up,
+show the relevant item clearly,
+show surrounding setting if needed,
+
+${stylePreset},
+
+SCENE:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+close-up on object or medium shot depending on readability,
+cinematic storytelling,
+high detail prop rendering,
+clear narrative emphasis,
+if the story mentions a weapon, the weapon must be visible,
+if the story mentions lights, the lights must be visible,
+if the story mentions an artifact, altar, scroll or portal, it must be visible
+`;
+        } else if (sceneFocus === "group_scene") {
+          const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+          const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
+          const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
+
+          finalPrompt = `
+group scene,
+multiple figures visible,
+do not make it a solo portrait,
+main figures readable,
+background people also visible,
+wide shot or medium wide shot,
+show the environment clearly,
+show narrative objects clearly,
+
+${stylePreset},
+
+SCENE ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+GROUP DETAILS:
+${crowdSupport}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+cinematic manga storytelling,
+scene must feel populated,
+disciples or crowd visible when implied,
+balanced group staging,
+clear readable composition
 `;
         } else if (sceneFocus === "two_characters" && charactersData.length >= 2) {
           const sortedPair = sortCharactersForConsistency(charactersData).slice(0, 2);
@@ -2010,6 +2316,8 @@ background only
 
           const safeVisualText = sanitizeMultiCharacterText(visualText);
           const safeDialogueText = sanitizeMultiCharacterText(dialogueText);
+          const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+          const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
 
           const karolLockA = charA.name.toLowerCase() === "karol" ? `
 STRICT KAROL CANON:
@@ -2090,8 +2398,7 @@ both characters clearly visible,
 both faces visible,
 both heads visible,
 left character and right character,
-medium two-shot,
-waist-up or full-body composition,
+medium two-shot or medium wide shot,
 clear separation between both characters,
 visible gap between bodies,
 no touching,
@@ -2105,14 +2412,14 @@ no romantic pose,
 no intimate pose,
 no embrace,
 no hand holding,
-no cheek contact,
-no face touching,
 not a solo portrait,
 not a crowd,
 not three characters,
 balanced composition,
 clean silhouette separation,
 must visually represent the narrative described,
+if the location matters, the location must be visible,
+if an object matters, the object must be visible,
 
 ${stylePreset},
 
@@ -2153,6 +2460,12 @@ ${safeVisualText}
 EMOTIONAL CONTEXT:
 ${safeDialogueText}
 
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
 CAMERA:
 ${composition.camera},
 
@@ -2166,6 +2479,101 @@ clear focal point,
 balanced anatomy,
 both characters readable
 `;
+        } else if (sceneFocus === "character_in_environment" && charactersData.length >= 1) {
+          const char =
+            preferReferenceCharacter(
+              dedupeCharacters(charactersData),
+              uniqueDetected[0] || charactersData[0]?.name || null
+            );
+
+          const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+          const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
+          const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
+          const consistencyAnchor = buildCharacterConsistencyAnchor(char);
+
+          let mefistoBoost = "";
+          if (char.name.toLowerCase() === "mefisto") {
+            mefistoBoost = `
+STRICT MEFISTO VISUAL LOCK,
+cat ears ALWAYS visible,
+cat ears clearly visible,
+cat ears visible from any angle,
+ears clearly separated from hair,
+no hair covering ears,
+no hidden cat ears,
+long sapphire blue hair,
+blue hair only,
+emerald glowing eyes,
+green eyes only,
+mystical aura visible,
+spiritual particles around,
+ethereal lighting,
+fantasy presence,
+NOT HUMAN GIRL,
+SPIRITUAL ENTITY,
+MYSTICAL BEING,
+must look like fantasy guide,
+use the same established reference identity
+`;
+          }
+
+          finalPrompt = `
+single main character inside a strong visible environment,
+character and environment both important,
+do not crop into face-only portrait,
+show the place clearly,
+show architecture or setting clearly,
+medium wide shot or wide shot,
+full body or three-quarter body preferred,
+environment must be readable,
+object elements must be visible if mentioned,
+do not reduce the panel to only a face,
+
+${stylePreset},
+
+${char.identityPrompt}
+${mefistoBoost}
+${consistencyAnchor}
+
+SCENE ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+GROUP ATMOSPHERE:
+${crowdSupport}
+
+must visually represent the narrative described,
+must show the setting described in the text,
+must not reduce the scene to only a face close-up,
+clear background storytelling,
+character integrated into environment,
+if the story mentions a tower, show the tower,
+if the story mentions an arena, show the arena,
+if the story mentions a sect, show sect architecture,
+if the story mentions a weapon, show the weapon,
+if the story mentions lights, show the lights,
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+cinematic manga storytelling,
+environmental storytelling,
+balanced anatomy,
+clear focal hierarchy
+`;
         } else if (charactersData.length >= 1) {
           const preferredSingleName =
             uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
@@ -2178,36 +2586,24 @@ both characters readable
           if (char.name.toLowerCase() === "mefisto") {
             mefistoBoost = `
 STRICT MEFISTO VISUAL LOCK,
-
 cat ears ALWAYS visible,
 cat ears clearly visible,
 cat ears visible from any angle,
 ears clearly separated from hair,
 no hair covering ears,
 no hidden cat ears,
-
 long sapphire blue hair,
 blue hair only,
-
 emerald glowing eyes,
 green eyes only,
-
 mystical aura visible,
 spiritual particles around,
 ethereal lighting,
 fantasy presence,
-
 NOT HUMAN GIRL,
 SPIRITUAL ENTITY,
 MYSTICAL BEING,
-
-no black hair,
-no brown hair,
-no blonde hair,
-no white hair,
-no casual outfit,
 must look like fantasy guide,
-
 high detail anime face,
 consistent identity,
 same exact character,
@@ -2240,7 +2636,6 @@ ${dialogueText}
 must visually represent the narrative described,
 must match the dialogue context,
 no unrelated objects,
-no empty environment unless explicitly requested,
 focus on the character involved in the dialogue,
 
 CAMERA:
@@ -2259,7 +2654,6 @@ distinctive hairstyle,
 distinctive outfit,
 cinematic storytelling,
 balanced anatomy,
-no face visible or only partial face if needed,
 no random cropping
 `;
           } else if (viewAngle === "profile") {
@@ -2357,7 +2751,6 @@ ${dialogueText}
 must visually represent the narrative described,
 must match the dialogue context,
 no unrelated objects,
-no empty environment unless explicitly requested,
 focus on the character involved in the dialogue,
 
 ${storyProfile.mode === "youtube" ? `
@@ -2403,7 +2796,7 @@ cinematic scene
         let imageResult;
         let payload;
 
-        if (sceneFocus === "environment") {
+        if (sceneFocus === "environment" || sceneFocus === "object_focus" || sceneFocus === "group_scene") {
           payload = {
             prompt: finalPrompt,
             seed: null,
@@ -2556,16 +2949,27 @@ function getMangaStyle(title) {
 function detectSceneType(imagePrompt) {
   const t = String(imagePrompt || "").toLowerCase();
 
+  const envs = detectEnvironmentKeywords(t);
+  const objs = detectObjectKeywords(t);
+
+  if (detectGroupScene(t)) return "group_scene";
+
   if (
-    t.includes("landscape") ||
-    t.includes("environment") ||
-    t.includes("city") ||
-    t.includes("tower") ||
-    t.includes("panorama") ||
-    t.includes("background only")
+    envs.length &&
+    (
+      t.includes("man") ||
+      t.includes("woman") ||
+      t.includes("character") ||
+      t.includes("cultivator") ||
+      t.includes("girl") ||
+      t.includes("boy")
+    )
   ) {
-    return "environment";
+    return "character_in_environment";
   }
+
+  if (envs.length) return "environment";
+  if (objs.length) return "object_focus";
 
   if (
     t.includes("two characters") ||
