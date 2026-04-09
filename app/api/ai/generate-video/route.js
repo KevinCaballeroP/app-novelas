@@ -78,6 +78,17 @@ function escapePathForFFmpeg(filePath) {
   return filePath.replace(/\\/g, "/").replace(/:/g, "\\:");
 }
 
+function normalizeCaptionForFile(text = "") {
+  return String(text)
+    .replace(/\r/g, "")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’´`]/g, "'")
+    .replace(/\\/g, "")
+    .replace(/%/g, " por ciento ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getAudioDuration(ffmpegPath, audioPath) {
   const ffprobePath = getFfprobePath(ffmpegPath);
 
@@ -162,15 +173,15 @@ function getFormatProfile(format) {
       width: 1920,
       height: 1080,
       fps: 30,
-      panelPause: 0.28,
-      minPanelDuration: 2.2,
-      maxPanelDuration: 6.5,
+      panelPause: 0.16,
+      minPanelDuration: 1.8,
       zoomBase: "slow",
-      subtitleFontSize: 40,
-      subtitleY: "h-150",
-      fadeInMax: 0.35,
-      fadeOutDur: 0.25,
+      subtitleFontSize: 42,
+      subtitleBottomMargin: 70,
+      fadeInMax: 0.22,
+      fadeOutDur: 0.18,
       titleSuffix: "youtube",
+      wordsPerLine: 7,
     };
   }
 
@@ -179,15 +190,15 @@ function getFormatProfile(format) {
       width: 1080,
       height: 1920,
       fps: 30,
-      panelPause: 0.15,
-      minPanelDuration: 1.45,
-      maxPanelDuration: 3.2,
+      panelPause: 0.12,
+      minPanelDuration: 1.2,
       zoomBase: "fast",
-      subtitleFontSize: 46,
-      subtitleY: "h-230",
-      fadeInMax: 0.20,
-      fadeOutDur: 0.18,
+      subtitleFontSize: 48,
+      subtitleBottomMargin: 120,
+      fadeInMax: 0.18,
+      fadeOutDur: 0.14,
       titleSuffix: "shorts",
+      wordsPerLine: 4,
     };
   }
 
@@ -195,15 +206,15 @@ function getFormatProfile(format) {
     width: 1080,
     height: 1920,
     fps: 30,
-    panelPause: 0.18,
-    minPanelDuration: 1.5,
-    maxPanelDuration: 3.4,
+    panelPause: 0.12,
+    minPanelDuration: 1.2,
     zoomBase: "fast",
-    subtitleFontSize: 46,
-    subtitleY: "h-230",
-    fadeInMax: 0.22,
-    fadeOutDur: 0.18,
+    subtitleFontSize: 48,
+    subtitleBottomMargin: 120,
+    fadeInMax: 0.18,
+    fadeOutDur: 0.14,
     titleSuffix: "tiktok",
+    wordsPerLine: 4,
   };
 }
 
@@ -222,16 +233,17 @@ function buildAnimationFilter({
   const mood = style === "auto" ? inferPanelMood(caption, imagePrompt) : style;
   const profile = getFormatProfile(format);
 
- const parts =
-  format === "youtube"
-    ? [
-        `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
-        `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
-      ]
-    : [
-        `scale=${width}:${height}:force_original_aspect_ratio=increase`,
-        `crop=${width}:${height}`,
-      ];
+  const parts =
+    format === "youtube"
+      ? [
+          `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
+          `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
+        ]
+      : [
+          `scale=${width}:${height}:force_original_aspect_ratio=increase`,
+          `crop=${width}:${height}`,
+        ];
+
   const isWide = width > height;
   const isSlowBase = profile.zoomBase === "slow";
 
@@ -308,11 +320,29 @@ function buildAnimationFilter({
   return { vfParts: parts, mood };
 }
 
-function buildTextFilter(textPath, mood, format = "tiktok") {
-  const escapedTextPath = escapePathForFFmpeg(textPath);
-  const profile = getFormatProfile(format);
+function splitCaptionIntoLines(text = "", wordsPerLine = 4, maxLines = 3) {
+  const words = cleanText(text).split(" ").filter(Boolean);
+  if (!words.length) return [];
 
-  let y = profile.subtitleY;
+  const lines = [];
+  for (let i = 0; i < words.length; i += wordsPerLine) {
+    lines.push(words.slice(i, i + wordsPerLine).join(" "));
+    if (lines.length >= maxLines) {
+      const remaining = words.slice(i + wordsPerLine);
+      if (remaining.length) {
+        lines[lines.length - 1] += ` ${remaining.join(" ")}`;
+      }
+      break;
+    }
+  }
+
+  return lines;
+}
+
+function buildTextFilter(textPath, mood, format = "tiktok") {
+  const profile = getFormatProfile(format);
+  const escapedTextPath = escapePathForFFmpeg(textPath);
+
   let fontsize = profile.subtitleFontSize;
   let boxColor = "black@0.55";
   let boxBorder = format === "youtube" ? 18 : 24;
@@ -325,7 +355,18 @@ function buildTextFilter(textPath, mood, format = "tiktok") {
     boxColor = "black@0.60";
   }
 
-  return `drawtext=textfile='${escapedTextPath}':fontcolor=white:fontsize=${fontsize}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=${boxBorder}`;
+  return [
+    `drawtext=textfile='${escapedTextPath}'`,
+    `fontcolor=white`,
+    `fontsize=${fontsize}`,
+    `line_spacing=10`,
+    `x=(w-text_w)/2`,
+    `y=h-text_h-${profile.subtitleBottomMargin}`,
+    `box=1`,
+    `boxcolor=${boxColor}`,
+    `boxborderw=${boxBorder}`,
+    `fix_bounds=true`
+  ].join(":");
 }
 
 async function generateVoiceForPanel(text) {
@@ -366,6 +407,8 @@ function concatMediaFiles(ffmpegPath, inputPaths, outputPath, mode = "video") {
           "-f", "concat",
           "-safe", "0",
           "-i", listFile,
+          "-ar", "24000",
+          "-ac", "1",
           "-c:a", "mp3",
           outputPath,
         ]
@@ -392,7 +435,7 @@ function concatMediaFiles(ffmpegPath, inputPaths, outputPath, mode = "video") {
   }
 }
 
-function createSilenceAudio(ffmpegPath, outputPath, duration = 0.18) {
+function createSilenceAudio(ffmpegPath, outputPath, duration = 0.12) {
   const result = spawnSync(
     ffmpegPath,
     [
@@ -445,10 +488,6 @@ function reencodeClipForConcat(ffmpegPath, inputPath, outputPath, fps) {
   if (result.status !== 0) {
     throw new Error(`Error re-encodeando clip: ${result.stderr || "sin stderr"}`);
   }
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(value, max));
 }
 
 function normalizeFormats(formats) {
@@ -525,7 +564,7 @@ async function generateSingleFormatVideo({
   usePanelVoices = true,
 }) {
   const profile = getFormatProfile(format);
-  const { width, height, fps, panelPause, minPanelDuration, maxPanelDuration } = profile;
+  const { width, height, fps, panelPause, minPanelDuration } = profile;
 
   const formatDir = path.join(tempDir, format);
   fs.mkdirSync(formatDir, { recursive: true });
@@ -540,30 +579,28 @@ async function generateSingleFormatVideo({
     const rawClipPath = path.join(formatDir, `clip_raw_${index}.mp4`);
     const finalClipPath = path.join(formatDir, `clip_final_${index}.mp4`);
     const textPath = path.join(formatDir, `caption_${index}.txt`);
-    const pauseAudioPath = path.join(formatDir, `pause_${index}.mp3`);
-
     const captionForVideo = buildHookText(title, panel.caption, index);
-    fs.writeFileSync(textPath, captionForVideo, "utf8");
 
-    let duration = format === "youtube" ? 2.6 : 2.0;
+    let duration = format === "youtube" ? 2.4 : 1.8;
 
     if (usePanelVoices && panel.voicePath) {
-      duration = clamp(
-        panel.realAudioDuration + panelPause,
-        minPanelDuration,
-        maxPanelDuration
-      );
+      duration = panel.realAudioDuration + panelPause;
+
+      if (duration < minPanelDuration) {
+        duration = minPanelDuration;
+      }
 
       audioSegmentPaths.push(panel.voicePath);
 
       if (panelPause > 0) {
+        const pauseAudioPath = path.join(formatDir, `pause_${index}.mp3`);
         createSilenceAudio(ffmpegPath, pauseAudioPath, panelPause);
         audioSegmentPaths.push(pauseAudioPath);
       }
     } else {
       const fallbackChars = Math.max(captionForVideo.length, 12);
-      const estimated = fallbackChars / (format === "youtube" ? 14 : 18);
-      duration = clamp(estimated, minPanelDuration, maxPanelDuration);
+      const estimated = fallbackChars / (format === "youtube" ? 13 : 16);
+      duration = Math.max(estimated, minPanelDuration);
     }
 
     const { vfParts, mood } = buildAnimationFilter({
@@ -579,7 +616,17 @@ async function generateSingleFormatVideo({
     });
 
     if (captionForVideo) {
-      vfParts.push(buildTextFilter(textPath, mood, format));
+      const maxLines = format === "youtube" ? 2 : 3;
+      const lines = splitCaptionIntoLines(
+        normalizeCaptionForFile(captionForVideo),
+        profile.wordsPerLine,
+        maxLines
+      );
+
+      fs.writeFileSync(textPath, lines.join("\n"), "utf8");
+
+      const textFilter = buildTextFilter(textPath, mood, format);
+      if (textFilter) vfParts.push(textFilter);
     }
 
     const vf = vfParts.join(",");
@@ -644,6 +691,9 @@ async function generateSingleFormatVideo({
         "-i", finalAudioPath,
         "-c:v", "copy",
         "-c:a", "aac",
+        "-ar", "24000",
+        "-ac", "1",
+        "-af", "aresample=async=1:first_pts=0",
         "-shortest",
         finalVideoWithAudioPath,
       ],
