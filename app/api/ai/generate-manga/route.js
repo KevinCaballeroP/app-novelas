@@ -21,7 +21,7 @@ const client = new Groq({
 
 const TRACKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
 const LOCKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
-const CURRENT_PROFILE_VERSION = 9;
+const CURRENT_PROFILE_VERSION = 10;
 
 // ================= HELPERS =================
 function normalizeName(name) {
@@ -273,6 +273,114 @@ function detectObjectKeywords(text = "") {
     .map(item => item.key);
 }
 
+function detectAbilityKeywords(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  return (
+    t.includes("habilidad") ||
+    t.includes("skill") ||
+    t.includes("power") ||
+    t.includes("poder") ||
+    t.includes("energia") ||
+    t.includes("energía") ||
+    t.includes("aura") ||
+    t.includes("explosion") ||
+    t.includes("explosión") ||
+    t.includes("shockwave") ||
+    t.includes("ataque") ||
+    t.includes("attack") ||
+    t.includes("golpe") ||
+    t.includes("magia") ||
+    t.includes("magic") ||
+    t.includes("spell") ||
+    t.includes("hechizo") ||
+    t.includes("invoca") ||
+    t.includes("invocar") ||
+    t.includes("summon") ||
+    t.includes("summoning") ||
+    t.includes("transforma") ||
+    t.includes("transformación") ||
+    t.includes("transformacion") ||
+    t.includes("fuego") ||
+    t.includes("fire") ||
+    t.includes("llamas") ||
+    t.includes("flames") ||
+    t.includes("hielo") ||
+    t.includes("ice") ||
+    t.includes("frost") ||
+    t.includes("rayo") ||
+    t.includes("lightning") ||
+    t.includes("electric") ||
+    t.includes("electricidad") ||
+    t.includes("sombra") ||
+    t.includes("shadow") ||
+    t.includes("dark energy") ||
+    t.includes("luz") ||
+    t.includes("holy light") ||
+    t.includes("radiant") ||
+    t.includes("beam") ||
+    t.includes("laser") ||
+    t.includes("mana") ||
+    t.includes("qi") ||
+    t.includes("chi") ||
+    t.includes("desató su poder") ||
+    t.includes("desato su poder") ||
+    t.includes("liberó su aura") ||
+    t.includes("libero su aura") ||
+    t.includes("activó su poder") ||
+    t.includes("activo su poder") ||
+    t.includes("usó su habilidad") ||
+    t.includes("uso su habilidad")
+  );
+}
+
+function buildAbilityDetails(text = "") {
+  const t = String(text || "").toLowerCase();
+  const parts = [];
+
+  if (["fuego", "fire", "llamas", "flames"].some(w => t.includes(w))) {
+    parts.push("flames around the body, burning aura, fire energy emission, heat distortion, embers in the air");
+  }
+
+  if (["hielo", "ice", "frost", "escarcha"].some(w => t.includes(w))) {
+    parts.push("ice shards, frost aura, cold mist, frozen particles, icy ground details");
+  }
+
+  if (["rayo", "lightning", "electric", "electricidad"].some(w => t.includes(w))) {
+    parts.push("lightning arcs, electric current around the body, bright impact flashes, charged atmosphere");
+  }
+
+  if (["oscuro", "dark", "shadow", "sombra"].some(w => t.includes(w))) {
+    parts.push("dark energy emission, shadow aura, black-purple particles, ominous smoky power");
+  }
+
+  if (["luz", "holy", "radiant", "sagrada"].some(w => t.includes(w))) {
+    parts.push("radiant light aura, holy light beams, glowing particles, brilliant energy halo");
+  }
+
+  if (["energia", "energía", "aura", "mana", "qi", "chi"].some(w => t.includes(w))) {
+    parts.push("visible energy aura, power emission, glowing spiritual particles, surrounding energy waves");
+  }
+
+  if (["explosion", "explosión", "shockwave"].some(w => t.includes(w))) {
+    parts.push("explosion impact, shockwave distortion, flying debris, violent energy burst");
+  }
+
+  if (["invoca", "invocar", "summon", "summoning"].some(w => t.includes(w))) {
+    parts.push("summoning circle, magical glyphs, ritual light, energy formation appearing");
+  }
+
+  if (["beam", "laser", "rayo de energia", "rayo de energía"].some(w => t.includes(w))) {
+    parts.push("energy beam, focused blast of light, projected power attack, strong directional impact");
+  }
+
+  if (["transforma", "transformación", "transformacion"].some(w => t.includes(w))) {
+    parts.push("transformation aura, body surrounded by power, energy metamorphosis effect, intense glowing transition");
+  }
+
+  return parts.join(", ");
+}
+
 function detectGroupScene(text = "") {
   const t = String(text || "").toLowerCase();
 
@@ -407,6 +515,14 @@ function inferNarrativeVisualFocus({
 
   if (objs.length && totalChars >= 1) {
     return "character_in_environment";
+  }
+
+  if (detectAbilityKeywords(combined) && totalChars >= 1 && (envs.length || objs.length)) {
+    return "character_in_environment";
+  }
+
+  if (detectAbilityKeywords(combined) && totalChars >= 1) {
+    return totalChars >= 2 ? "two_characters" : "single_character";
   }
 
   if (totalChars >= 2) {
@@ -648,6 +764,189 @@ recognizable character design
   `.trim();
 }
 
+function buildDefaultAbilityProfile(cleanName, description = "", stylePreset = "dark_cultivator") {
+  const lowerName = String(cleanName || "").toLowerCase();
+  const text = String(description || "").toLowerCase();
+
+  if (lowerName === "karol") {
+    return {
+      abilityName: "Llama Espiritual Dorada",
+      abilityPrompt: `
+golden spiritual fire,
+flames around the body,
+burning aura,
+glowing embers,
+radiant golden energy,
+elegant but destructive power,
+fire waves expanding outward,
+visible power release
+`.trim(),
+      abilityElements: ["fire", "spirit", "aura"],
+      abilityColor: "golden",
+      abilityVfx: [
+        "flames around the body",
+        "burning aura",
+        "glowing embers",
+        "golden energy waves"
+      ]
+    };
+  }
+
+  if (lowerName === "mefisto") {
+    return {
+      abilityName: "Aura Felina Azul Arcana",
+      abilityPrompt: `
+sapphire blue mystical aura,
+emerald spiritual particles,
+cat-spirit energy,
+ethereal magical glow,
+floating glyphs,
+arcane blue flames,
+mystical summoning presence,
+spiritual power visibly surrounding the body
+`.trim(),
+      abilityElements: ["arcane", "spirit", "summon", "aura"],
+      abilityColor: "sapphire blue",
+      abilityVfx: [
+        "blue mystical aura",
+        "emerald particles",
+        "floating glyphs",
+        "arcane flames"
+      ]
+    };
+  }
+
+  if (lowerName === "cristian") {
+    return {
+      abilityName: "Impacto Oscuro",
+      abilityPrompt: `
+dark violent energy,
+shadow aura,
+black-purple particles,
+explosive power release,
+ominous smoke energy,
+heavy destructive impact,
+shockwave distortion,
+debris thrown outward
+`.trim(),
+      abilityElements: ["dark", "impact", "shadow"],
+      abilityColor: "black-purple",
+      abilityVfx: [
+        "shadow aura",
+        "black-purple particles",
+        "shockwave distortion",
+        "flying debris"
+      ]
+    };
+  }
+
+  if (lowerName === "kelvin") {
+    return {
+      abilityName: "Rayo de Presión Espiritual",
+      abilityPrompt: `
+electric spiritual aura,
+lightning arcs,
+charged atmosphere,
+focused energy beam,
+bright flashes,
+spiritual pressure distortion,
+high-speed attack energy,
+electrical power release
+`.trim(),
+      abilityElements: ["lightning", "pressure", "energy"],
+      abilityColor: "electric blue",
+      abilityVfx: [
+        "lightning arcs",
+        "charged atmosphere",
+        "bright impact flashes",
+        "energy beam"
+      ]
+    };
+  }
+
+  if (text.includes("fuego") || text.includes("fire") || text.includes("llama")) {
+    return {
+      abilityName: "Fuego Espiritual",
+      abilityPrompt: "spiritual fire, flames, burning aura, embers, visible fire power",
+      abilityElements: ["fire", "aura"],
+      abilityColor: "orange-gold",
+      abilityVfx: ["flames", "embers", "burning aura"]
+    };
+  }
+
+  if (text.includes("hielo") || text.includes("ice") || text.includes("frost")) {
+    return {
+      abilityName: "Escarcha Arcana",
+      abilityPrompt: "ice shards, frost aura, cold mist, frozen particles, visible freezing energy",
+      abilityElements: ["ice", "frost"],
+      abilityColor: "icy blue",
+      abilityVfx: ["ice shards", "cold mist", "frozen particles"]
+    };
+  }
+
+  if (text.includes("rayo") || text.includes("lightning") || text.includes("electric")) {
+    return {
+      abilityName: "Descarga Espiritual",
+      abilityPrompt: "lightning arcs, electric aura, charged atmosphere, bright flashes, visible electric attack",
+      abilityElements: ["lightning", "electric"],
+      abilityColor: "electric blue",
+      abilityVfx: ["lightning arcs", "electric aura", "bright flashes"]
+    };
+  }
+
+  return {
+    abilityName: "Aura Espiritual",
+    abilityPrompt: "visible spiritual aura, glowing particles, energy emission, surrounding power waves",
+    abilityElements: ["aura", "spirit"],
+    abilityColor: "white-gold",
+    abilityVfx: ["glowing particles", "energy emission", "power waves"]
+  };
+}
+
+function buildPersistentAbilityBlock(character, panelText = "") {
+  if (!character) return "";
+
+  const text = String(panelText || "").toLowerCase();
+  const hasAbility =
+    detectAbilityKeywords(text) ||
+    text.includes("usa su habilidad") ||
+    text.includes("usó su habilidad") ||
+    text.includes("uso su habilidad") ||
+    text.includes("activo su poder") ||
+    text.includes("activó su poder") ||
+    text.includes("desató su poder") ||
+    text.includes("desato su poder") ||
+    text.includes("liberó su aura") ||
+    text.includes("libero su aura") ||
+    text.includes("release his power") ||
+    text.includes("release her power");
+
+  if (!hasAbility) return "";
+
+  const abilityName = character.abilityName || "Spiritual Ability";
+  const abilityPrompt = character.abilityPrompt || "";
+  const abilityColor = character.abilityColor || "";
+  const abilityVfx = Array.isArray(character.abilityVfx) ? character.abilityVfx.join(", ") : "";
+
+  return `
+PERSISTENT CHARACTER ABILITY:
+${character.name} is using the ability "${abilityName}",
+this character must always express this same signature power style,
+signature color: ${abilityColor},
+signature effects: ${abilityVfx},
+visual ability identity:
+${abilityPrompt},
+
+ABILITY VISUAL RULES:
+the power must be clearly visible,
+the character must not look passive,
+show power release, aura, energy emission and impact,
+the environment can react to the power if appropriate,
+keep the same power style across panels,
+do not invent a different random power effect
+`;
+}
+
 async function ensureCharacterReference(character, options = {}) {
   if (!character) return null;
 
@@ -665,6 +964,10 @@ async function ensureCharacterReference(character, options = {}) {
     referenceImage: character.referenceImage || null,
     characterCount: 1,
     duoType: null,
+    abilityName: character.abilityName || "",
+    abilityPrompt: character.abilityPrompt || "",
+    abilityColor: character.abilityColor || "",
+    abilityVfx: Array.isArray(character.abilityVfx) ? character.abilityVfx : [],
   };
 
   const refRes = await fetch("http://localhost:8000/generate", {
@@ -706,6 +1009,10 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
       referenceImage: null,
       characterCount: 0,
       duoType: null,
+      abilityName: "",
+      abilityPrompt: "",
+      abilityColor: "",
+      abilityVfx: [],
     };
   }
 
@@ -722,6 +1029,10 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
       referenceImage: char.referenceImage || null,
       characterCount: 1,
       duoType: null,
+      abilityName: char.abilityName || "",
+      abilityPrompt: char.abilityPrompt || "",
+      abilityColor: char.abilityColor || "",
+      abilityVfx: Array.isArray(char.abilityVfx) ? char.abilityVfx : [],
     };
   }
 
@@ -743,6 +1054,10 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
       identityPrompt: charA.identityPrompt || "",
       seed: charA.seed || null,
       referenceImage: charA.referenceImage || null,
+      abilityName: charA.abilityName || "",
+      abilityPrompt: charA.abilityPrompt || "",
+      abilityColor: charA.abilityColor || "",
+      abilityVfx: Array.isArray(charA.abilityVfx) ? charA.abilityVfx : [],
     },
 
     characterB: {
@@ -751,10 +1066,18 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
       identityPrompt: charB.identityPrompt || "",
       seed: charB.seed || null,
       referenceImage: charB.referenceImage || null,
+      abilityName: charB.abilityName || "",
+      abilityPrompt: charB.abilityPrompt || "",
+      abilityColor: charB.abilityColor || "",
+      abilityVfx: Array.isArray(charB.abilityVfx) ? charB.abilityVfx : [],
     },
 
     referenceImage: null,
     identityPrompt: null,
+    abilityName: "",
+    abilityPrompt: "",
+    abilityColor: "",
+    abilityVfx: [],
   };
 }
 
@@ -1031,6 +1354,7 @@ async function createOrUpdateCharacter(mangaTitle, name, description, stylePrese
   const lowerName = cleanName.toLowerCase();
   const seed = generateCharacterSeed(cleanName);
   const existingCharacter = await findCharacter(mangaTitle, cleanName);
+  const defaultAbility = buildDefaultAbilityProfile(cleanName, description, stylePreset);
 
   if (lowerName === "mefisto") {
     const identityPrompt = `
@@ -1103,6 +1427,11 @@ RECOGNIZABLE AS SAME CHARACTER
           lockIdentity: true,
           cultivationLevel: existingCharacter?.cultivationLevel || "D3",
           evolutionStage: existingCharacter?.evolutionStage || 1,
+          abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+          abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+          abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
+          abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+          abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
         },
         $setOnInsert: {
           name: cleanName,
@@ -1156,6 +1485,11 @@ recognizable male silhouette
           lockIdentity: true,
           cultivationLevel: existingCharacter?.cultivationLevel || "D3",
           evolutionStage: existingCharacter?.evolutionStage || 1,
+          abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+          abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+          abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
+          abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+          abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
         },
         $setOnInsert: {
           name: cleanName,
@@ -1386,6 +1720,11 @@ no androgynous traits
         lockIdentity: isLockedCharacterName(cleanName),
         cultivationLevel: existingCharacter?.cultivationLevel || "D3",
         evolutionStage: existingCharacter?.evolutionStage || 1,
+        abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+        abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+        abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
+        abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+        abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
       },
       $setOnInsert: {
         name: cleanName,
@@ -1685,7 +2024,7 @@ dramatic foreshortening,
 foreground depth,
 speed lines
 `,
-      extra: "kinetic energy, action storytelling"
+      extra: "kinetic energy, action storytelling, visible power release, strong impact effects"
     };
   }
 
@@ -1928,6 +2267,7 @@ Rules:
 - If the panel mentions an altar, the altar must be visible.
 - If the panel mentions a weapon, the weapon must be visible.
 - If the panel mentions lights, glowing particles or floating lights, they must be visible.
+- If the panel mentions an ability, power, aura, spell, transformation or attack, it must be visible.
 - If the panel mentions several people, the scene must not become a solo portrait.
 - Do not reduce environment scenes to only a big face close-up.
 
@@ -2007,6 +2347,23 @@ ${safePrompt}
         const panelSeed = baseStyleSeed + page.page * 100 + panelIndex;
         const visualText = panel.imagePrompt || "";
         const dialogueText = panel.dialogue || "";
+        const combinedPanelText = `${visualText} ${dialogueText}`;
+        const hasAbility = detectAbilityKeywords(combinedPanelText);
+        const abilityDetails = buildAbilityDetails(combinedPanelText);
+
+        const abilityPromptBlock = hasAbility
+          ? `
+ABILITY VISUAL RULES:
+the character is actively using a visible ability,
+the power must be clearly visible,
+the ability must dominate the visual storytelling,
+no passive idle pose,
+show action, motion and energy emission,
+show impact on the environment if appropriate,
+visual effects must match the described power,
+${abilityDetails}
+`
+          : "";
 
         const inferredNames = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
         const rawPanelNames = Array.isArray(panel.characters) ? panel.characters : [];
@@ -2170,7 +2527,8 @@ ${composition.extra},
 ${framingTag},
 ${extraFramingRules},
 manga infographic style,
-clear symbolic composition
+clear symbolic composition,
+${abilityPromptBlock}
 `;
         } else if (sceneFocus === "environment") {
           const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
@@ -2197,6 +2555,8 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+
+${abilityPromptBlock}
 
 GROUP ATMOSPHERE:
 ${crowdSupport}
@@ -2247,6 +2607,8 @@ ${envDetails}
 OBJECT DETAILS:
 ${objDetails}
 
+${abilityPromptBlock}
+
 CAMERA:
 ${composition.camera},
 
@@ -2292,6 +2654,8 @@ ${envDetails}
 OBJECT DETAILS:
 ${objDetails}
 
+${abilityPromptBlock}
+
 GROUP DETAILS:
 ${crowdSupport}
 
@@ -2313,6 +2677,8 @@ clear readable composition
           const sortedPair = sortCharactersForConsistency(charactersData).slice(0, 2);
           const charA = sortedPair[0];
           const charB = sortedPair[1];
+          const persistentAbilityA = buildPersistentAbilityBlock(charA, combinedPanelText);
+          const persistentAbilityB = buildPersistentAbilityBlock(charB, combinedPanelText);
 
           const safeVisualText = sanitizeMultiCharacterText(visualText);
           const safeDialogueText = sanitizeMultiCharacterText(dialogueText);
@@ -2466,6 +2832,14 @@ ${envDetails}
 OBJECT DETAILS:
 ${objDetails}
 
+PERSISTENT ABILITY A:
+${persistentAbilityA}
+
+PERSISTENT ABILITY B:
+${persistentAbilityB}
+
+${abilityPromptBlock}
+
 CAMERA:
 ${composition.camera},
 
@@ -2486,6 +2860,7 @@ both characters readable
               uniqueDetected[0] || charactersData[0]?.name || null
             );
 
+          const persistentAbilityBlock = buildPersistentAbilityBlock(char, combinedPanelText);
           const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
           const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
           const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
@@ -2547,6 +2922,11 @@ ${envDetails}
 OBJECT DETAILS:
 ${objDetails}
 
+PERSISTENT CHARACTER ABILITY:
+${persistentAbilityBlock}
+
+${abilityPromptBlock}
+
 GROUP ATMOSPHERE:
 ${crowdSupport}
 
@@ -2581,6 +2961,7 @@ clear focal hierarchy
             null;
 
           const char = preferReferenceCharacter(charactersData, preferredSingleName);
+          const persistentAbilityBlock = buildPersistentAbilityBlock(char, combinedPanelText);
           let mefistoBoost = "";
 
           if (char.name.toLowerCase() === "mefisto") {
@@ -2638,6 +3019,11 @@ must match the dialogue context,
 no unrelated objects,
 focus on the character involved in the dialogue,
 
+PERSISTENT CHARACTER ABILITY:
+${persistentAbilityBlock}
+
+${abilityPromptBlock}
+
 CAMERA:
 ${composition.camera},
 
@@ -2686,6 +3072,11 @@ must visually represent the narrative described,
 must match the dialogue context,
 no unrelated objects,
 focus on the character involved in the dialogue,
+
+PERSISTENT CHARACTER ABILITY:
+${persistentAbilityBlock}
+
+${abilityPromptBlock}
 
 ${storyProfile.mode === "youtube" ? `
 prefer medium shot or wider framing,
@@ -2753,6 +3144,11 @@ must match the dialogue context,
 no unrelated objects,
 focus on the character involved in the dialogue,
 
+PERSISTENT CHARACTER ABILITY:
+${persistentAbilityBlock}
+
+${abilityPromptBlock}
+
 ${storyProfile.mode === "youtube" ? `
 prefer medium shot or wider framing,
 full head visible,
@@ -2789,6 +3185,7 @@ ${composition.composition},
 ${composition.extra},
 ${framingTag},
 ${extraFramingRules},
+${abilityPromptBlock},
 cinematic scene
 `;
         }
@@ -2806,6 +3203,10 @@ cinematic scene
             referenceImage: null,
             characterCount: 0,
             duoType: null,
+            abilityName: "",
+            abilityPrompt: "",
+            abilityColor: "",
+            abilityVfx: [],
           };
         } else {
           const charactersForPayload =
@@ -2970,6 +3371,10 @@ function detectSceneType(imagePrompt) {
 
   if (envs.length) return "environment";
   if (objs.length) return "object_focus";
+
+  if (detectAbilityKeywords(t) && (t.includes("man") || t.includes("woman") || t.includes("character") || t.includes("cultivator") || t.includes("girl") || t.includes("boy"))) {
+    return "single_character";
+  }
 
   if (
     t.includes("two characters") ||
