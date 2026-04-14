@@ -19,13 +19,178 @@ const client = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
-const TRACKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
-const LOCKED_CHARACTER_NAMES = ["Karol", "Cristian", "Kelvin", "Mefisto"];
+const LOCKED_CHARACTER_NAMES = [
+  "Karol",
+  "Cristian",
+  "Kelvin",
+  "Mefisto",
+  "Siete",
+  "Amanecer",
+  "Mapa"
+];
+
+const DETECTABLE_CHARACTER_NAMES = [
+  "Karol",
+  "Cristian",
+  "Kelvin",
+  "Mefisto",
+  "Siete",
+  "Amanecer",
+  "Mapa",
+  "Lex",
+  "Natalia",
+  "Camilo",
+  "Jairo",
+  "Yack",
+  "Natalia Selecte",
+  "Camilo Ricón",
+  "Lex Stoll",
+  "Jairo Velásquez",
+  "Yack Parces"
+];
+
+const CHARACTER_NAME_ALIASES = {
+  karol: "Karol",
+  cristian: "Cristian",
+  kelvin: "Kelvin",
+  mefisto: "Mefisto",
+  siete: "Siete",
+  amanecer: "Amanecer",
+  mapa: "Mapa",
+
+  lex: "Lex",
+  alex: "Lex",
+  "lex stoll": "Lex",
+  "alex stoll": "Lex",
+
+  natalia: "Natalia",
+  "natalia selecte": "Natalia",
+
+  camilo: "Camilo",
+  "camilo ricon": "Camilo",
+  "camilo ricón": "Camilo",
+
+  jairo: "Jairo",
+  "jairo velasquez": "Jairo",
+  "jairo velásquez": "Jairo",
+
+  yack: "Yack",
+  "yack parces": "Yack"
+};
+const BANNED_GENERIC_CHARACTER_NAMES = [
+  "Gente",
+  "Persona",
+  "Nadie",
+  "Alguien",
+  "Hombre",
+  "Mujer",
+  "Chico",
+  "Chica",
+  "Joven",
+  "Guerrero",
+  "Maestro",
+  "Discípulo",
+  "Discipulo",
+  "Aventurero",
+  "Enemigo",
+  "Extra",
+  "Multitud",
+  "Grupo",
+  "Muchacho",
+  "Muchacha",
+  "Adulto",
+  "Adulta",
+  "Figura",
+  "Sombra",
+  "Desconocido",
+  "Desconocida"
+];
 const CURRENT_PROFILE_VERSION = 10;
 
 // ================= HELPERS =================
 function normalizeName(name) {
   return String(name || "").trim();
+}
+function isBannedGenericCharacterName(name) {
+  const lower = normalizeName(name).toLowerCase();
+  if (!lower) return true;
+
+  return BANNED_GENERIC_CHARACTER_NAMES.some(
+    (bad) => bad.toLowerCase() === lower
+  );
+}
+function canonicalizeCharacterName(name) {
+  const clean = normalizeName(name);
+  if (!clean) return "";
+
+  const lower = clean.toLowerCase();
+
+  if (isBannedGenericCharacterName(lower)) {
+    return "";
+  }
+
+  return CHARACTER_NAME_ALIASES[lower] || clean;
+}
+
+function dedupeCanonicalNames(names = []) {
+  const seen = new Set();
+  const out = [];
+
+  for (const raw of names) {
+    const canonical = canonicalizeCharacterName(raw);
+    if (!canonical) continue;
+    if (isBannedGenericCharacterName(canonical)) continue;
+
+    const key = canonical.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    out.push(canonical);
+  }
+
+  return out;
+}
+
+async function findCharactersByNames(mangaTitle, names = []) {
+  const canonicalNames = dedupeCanonicalNames(names);
+  if (!canonicalNames.length) return [];
+
+  const regexes = canonicalNames.map(
+    (n) => new RegExp(`^${escapeRegex(n)}$`, "i")
+  );
+
+  return await Character.find({
+    mangaTitle,
+    name: { $in: regexes }
+  });
+}
+
+async function extractDetectedCharacterNamesForTitle(mangaTitle, text) {
+  const found = extractAllCharacterNames(text).map(canonicalizeCharacterName);
+  const deduped = dedupeCanonicalNames(found).filter(
+    (name) => !isBannedGenericCharacterName(name)
+  );
+
+  if (!deduped.length) return [];
+
+  const existing = await findCharactersByNames(mangaTitle, deduped);
+  const existingNames = new Set(
+    existing
+      .map((c) => normalizeNameLower(c.name))
+      .filter((name) => !isBannedGenericCharacterName(name))
+  );
+
+  return deduped.filter((name) => {
+    const lower = normalizeNameLower(name);
+
+    if (isBannedGenericCharacterName(lower)) return false;
+
+    return (
+      DETECTABLE_CHARACTER_NAMES.some(
+        (tracked) => tracked.toLowerCase() === lower
+      ) || existingNames.has(lower)
+    );
+  });
 }
 
 function normalizeNameLower(name) {
@@ -48,8 +213,12 @@ function dedupeNames(names = []) {
 
   for (const raw of names) {
     const clean = normalizeName(raw);
+    if (!clean) continue;
+    if (isBannedGenericCharacterName(clean)) continue;
+
     const key = clean.toLowerCase();
-    if (!clean || seen.has(key)) continue;
+    if (seen.has(key)) continue;
+
     seen.add(key);
     out.push(clean);
   }
@@ -129,6 +298,7 @@ function preferReferenceCharacter(characters = [], preferredName = null) {
 async function findCharacter(mangaTitle, name) {
   const cleanName = normalizeName(name);
   if (!cleanName) return null;
+  if (isBannedGenericCharacterName(cleanName)) return null;
 
   return await Character.findOne({
     mangaTitle,
@@ -278,6 +448,11 @@ function detectAbilityKeywords(text = "") {
 
   return (
     t.includes("habilidad") ||
+    t.includes("ira del dios de la guerra") ||
+    t.includes("despierta") ||
+    t.includes("llamas doradas") ||
+    t.includes("se envolvió en llamas doradas") ||
+    t.includes("velocidad inhumana") ||
     t.includes("skill") ||
     t.includes("power") ||
     t.includes("poder") ||
@@ -494,7 +669,7 @@ function inferNarrativeVisualFocus({
   const envs = detectEnvironmentKeywords(combined);
   const objs = detectObjectKeywords(combined);
   const charCount = Array.isArray(panelCharacters) ? panelCharacters.length : 0;
-  const trackedCount = extractTrackedCharacterNames(combined).length;
+  const trackedCount = extractDetectedCharacterNames(combined).length;
   const totalChars = Math.max(charCount, trackedCount);
 
   if (detectGroupScene(combined) || totalChars >= 3) {
@@ -539,23 +714,36 @@ function inferNarrativeVisualFocus({
 function buildCharacterConsistencyAnchor(character) {
   const lowerName = String(character?.name || "").toLowerCase();
 
-  let anchor = `
+ let anchor = `
 same character as previous panels,
 same hairstyle,
 same hair length,
 same hair color,
 same face structure,
 same body proportions,
-same clothing design,
+same core facial identity,
 same silhouette,
 recognizable identity,
-character continuity,
 consistent visual identity,
-recognizable from silhouette,
-same exact face,
 same exact character,
 no identity drift,
+outfit can adapt to scene context,
+clothing variation allowed if story requires it,
+combat stance variation allowed,
+expression variation allowed,
+pose variation allowed,
 no alternate design,
+
+IF A TECHNIQUE OR SKILL IS ACTIVATED:
+the character MUST visually transform,
+visible aura,
+energy emission,
+light distortion,
+environment reacting to power,
+motion blur or impact effects,
+no static pose allowed,
+no neutral stance allowed,
+the technique state must dominate over the idle state
 `;
 
   if (lowerName === "karol") {
@@ -581,8 +769,8 @@ same exact eye color
 `;
   }
 
-  if (lowerName === "kelvin") {
-    anchor += `
+ if (lowerName === "kelvin") {
+  anchor += `
 Kelvin,
 young man,
 short straight black hair,
@@ -591,10 +779,27 @@ masculine face,
 broad shoulders,
 slim masculine body,
 recognizable male silhouette,
-same exact character as before
-`;
-  }
+same exact face,
+same hair color,
+same hairstyle,
+same exact character as before,
 
+KELVIN VARIATION RULES:
+keep the same face identity,
+keep the same hairstyle,
+keep the same eye color,
+keep the same masculine build,
+allow different poses,
+allow different camera angles,
+allow different facial expressions,
+allow different action stances,
+allow battle movement,
+allow clothing variation appropriate to the scene,
+allow power stance variation,
+do not freeze Kelvin into a single reference pose,
+do not repeat the exact same composition every time
+`;
+}
   if (lowerName === "cristian") {
     anchor += `
 Cristian Uribe,
@@ -757,7 +962,9 @@ looking at viewer,
 neutral background,
 character reference sheet,
 same hairstyle,
-same outfit,
+same core design,
+recognizable outfit language,
+outfit may adapt to scene context,
 same facial structure,
 same identity,
 recognizable character design
@@ -840,29 +1047,29 @@ debris thrown outward
     };
   }
 
-  if (lowerName === "kelvin") {
-    return {
-      abilityName: "Rayo de Presión Espiritual",
-      abilityPrompt: `
-electric spiritual aura,
-lightning arcs,
-charged atmosphere,
-focused energy beam,
-bright flashes,
-spiritual pressure distortion,
-high-speed attack energy,
-electrical power release
+ if (lowerName === "kelvin") {
+  return {
+    abilityName: "Ira del Dios de la Guerra",
+    abilityPrompt: `
+golden battle aura,
+golden flames around the body,
+burning spiritual pressure,
+shockwave release,
+explosive combat energy,
+brutal high-speed attack motion,
+powerful impact distortion,
+war-god presence
 `.trim(),
-      abilityElements: ["lightning", "pressure", "energy"],
-      abilityColor: "electric blue",
-      abilityVfx: [
-        "lightning arcs",
-        "charged atmosphere",
-        "bright impact flashes",
-        "energy beam"
-      ]
-    };
-  }
+    abilityElements: ["fire", "battle", "shockwave", "aura"],
+    abilityColor: "golden",
+    abilityVfx: [
+      "golden flames around the body",
+      "burning spiritual pressure",
+      "shockwave distortion",
+      "explosive combat aura"
+    ]
+  };
+}
 
   if (text.includes("fuego") || text.includes("fire") || text.includes("llama")) {
     return {
@@ -939,6 +1146,12 @@ ${abilityPrompt},
 
 ABILITY VISUAL RULES:
 the power must be clearly visible,
+the face must remain recognizable while using the technique,
+do not replace identity with generic energy effects,
+the ability must transform the pose and scene composition,
+show technique-specific combat stance,
+show dynamic body movement,
+show scene reaction to the power,
 the character must not look passive,
 show power release, aura, energy emission and impact,
 the environment can react to the power if appropriate,
@@ -1329,28 +1542,55 @@ function extractPagesWithRegexFallback(content) {
 }
 
 function parseStoryboardJson(content) {
-  const extracted = extractFirstJsonObject(content);
-  const repaired = tryRepairJson(extracted);
+  const raw = String(content || "").trim();
+
+  const candidates = [];
 
   try {
-    return JSON.parse(repaired);
-  } catch (err) {
-    console.error("JSON RAW FROM GROQ:\n", content);
-    console.error("JSON EXTRACTED:\n", extracted);
-    console.error("JSON REPAIRED:\n", repaired);
+    candidates.push(extractFirstJsonObject(raw));
+  } catch (extractErr) {
+    console.warn("⚠️ extractFirstJsonObject falló, intentando reparación directa...");
+    console.error("EXTRACT ERROR:\n", extractErr);
+  }
 
-    try {
-      console.warn("⚠️ Usando fallback por JSON roto...");
-      return extractPagesWithRegexFallback(content);
-    } catch (fallbackErr) {
-      console.error("FALLBACK FAILED:\n", fallbackErr);
-      throw new Error(`Groq devolvió un storyboard inválido: ${err.message}`);
+  candidates.push(raw);
+
+  const uniqueCandidates = [...new Set(candidates.filter(Boolean))];
+
+  for (const candidate of uniqueCandidates) {
+    const attempts = [
+      candidate,
+      tryRepairJson(candidate),
+      tryRepairLooseJson(candidate),
+      tryRepairLooseJson(tryRepairJson(candidate)),
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const parsed = JSON.parse(attempt);
+
+        if (parsed?.pages && Array.isArray(parsed.pages)) {
+          return parsed;
+        }
+      } catch {}
     }
   }
-}
 
+  console.error("JSON RAW FROM GROQ:\n", raw);
+
+  try {
+    console.warn("⚠️ Usando fallback por JSON roto...");
+    return extractPagesWithRegexFallback(raw);
+  } catch (fallbackErr) {
+    console.error("FALLBACK FAILED:\n", fallbackErr);
+    throw new Error(`Groq devolvió un storyboard inválido: ${fallbackErr.message}`);
+  }
+}
 async function createOrUpdateCharacter(mangaTitle, name, description, stylePreset) {
   const cleanName = normalizeName(name);
+  if (!cleanName) return null;
+  if (isBannedGenericCharacterName(cleanName)) return null;
+
   const lowerName = cleanName.toLowerCase();
   const seed = generateCharacterSeed(cleanName);
   const existingCharacter = await findCharacter(mangaTitle, cleanName);
@@ -1766,15 +2006,44 @@ function extractPossibleNames(text) {
     "Universidad",
     "Diciembre",
     "Medellín",
-    "Rango"
+    "Rango",
+    "Persona",
+    "Gente",
+    "Nadie",
+    "Alguien",
+    "Hombre",
+    "Mujer",
+    "Joven",
+    "Guerrero",
+    "Maestro",
+    "Discípulo",
+    "Discipulo",
+    "Aventurero",
+    "Enemigo",
+    "Extra",
+    "Grupo",
+    "Multitud",
+    "Muchacho",
+    "Muchacha",
+    "Adulto",
+    "Adulta",
+    "Figura",
+    "Sombra",
+    "Desconocido",
+    "Desconocida"
   ]);
 
   const matches = text.match(/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\b/g) || [];
-  const filtered = matches.filter(word => !stopWords.has(word));
+
+  const filtered = matches.filter((word) => {
+    if (stopWords.has(word)) return false;
+    if (word.length <= 2) return false;
+    if (isBannedGenericCharacterName(word)) return false;
+    return true;
+  });
 
   return [...new Set(filtered)];
 }
-
 function extractKnownCharacterNames(text) {
   const t = String(text || "").toLowerCase();
 
@@ -1786,60 +2055,80 @@ function extractKnownCharacterNames(text) {
     "uryan",
     "juan",
     "siete",
-    "amanecer"
+    "amanecer",
+    "mapa"
   ];
 
   const found = [];
 
   for (const name of knownNames) {
-    const regex = new RegExp(`\\b${name}\\b`, "i");
+    const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
     if (regex.test(t)) {
-      found.push(name.charAt(0).toUpperCase() + name.slice(1));
+      found.push(canonicalizeCharacterName(name));
     }
   }
 
-  return [...new Set(found)];
+  return dedupeCanonicalNames(found);
 }
-
 function extractAllCharacterNames(text) {
   const explicitNames = extractPossibleNames(text);
   const knownNames = extractKnownCharacterNames(text);
 
-  return [...new Set([...explicitNames, ...knownNames].map(normalizeName).filter(Boolean))];
+  return [...new Set(
+    [...explicitNames, ...knownNames]
+      .map(normalizeName)
+      .filter(Boolean)
+      .filter((name) => !isBannedGenericCharacterName(name))
+  )];
 }
+function extractDetectedCharacterNames(text) {
+  const found = extractAllCharacterNames(text).map(canonicalizeCharacterName);
 
-function extractTrackedCharacterNames(text) {
-  const found = extractAllCharacterNames(text);
+  return dedupeCanonicalNames(
+    found.filter((name) => {
+      if (!name) return false;
+      if (isBannedGenericCharacterName(name)) return false;
 
-  return found.filter(name =>
-    TRACKED_CHARACTER_NAMES.some(
-      tracked => tracked.toLowerCase() === String(name).toLowerCase()
-    )
+      return DETECTABLE_CHARACTER_NAMES.some(
+        (tracked) => tracked.toLowerCase() === String(name).toLowerCase()
+      );
+    })
   );
 }
-
 function prioritizeStoryCharacters(names = [], dialogueText = "", visualText = "") {
   const lowerDialogue = String(dialogueText || "").toLowerCase();
   const lowerVisual = String(visualText || "").toLowerCase();
-  const ordered = [...names];
+  const ordered = dedupeCanonicalNames(names);
   const priority = [];
 
-  if (lowerDialogue.includes("karol") || lowerVisual.includes("karol")) priority.push("Karol");
-  if (lowerDialogue.includes("kelvin") || lowerVisual.includes("kelvin")) priority.push("Kelvin");
-  if (lowerDialogue.includes("cristian") || lowerVisual.includes("cristian")) priority.push("Cristian");
-  if (lowerDialogue.includes("mefisto") || lowerVisual.includes("mefisto")) priority.push("Mefisto");
+  const importantOrder = [
+    "Karol",
+    "Kelvin",
+    "Cristian",
+    "Mefisto",
+    "Siete",
+    "Amanecer",
+    "Mapa"
+  ];
+
+  for (const candidate of importantOrder) {
+    const lower = candidate.toLowerCase();
+    if (lowerDialogue.includes(lower) || lowerVisual.includes(lower)) {
+      priority.push(candidate);
+    }
+  }
 
   const finalNames = [];
 
   for (const p of priority) {
-    const found = ordered.find(n => String(n).toLowerCase() === p.toLowerCase());
-    if (found && !finalNames.some(x => String(x).toLowerCase() === String(found).toLowerCase())) {
+    const found = ordered.find((n) => String(n).toLowerCase() === p.toLowerCase());
+    if (found && !finalNames.some((x) => String(x).toLowerCase() === String(found).toLowerCase())) {
       finalNames.push(found);
     }
   }
 
   for (const n of ordered) {
-    if (!finalNames.some(x => String(x).toLowerCase() === String(n).toLowerCase())) {
+    if (!finalNames.some((x) => String(x).toLowerCase() === String(n).toLowerCase())) {
       finalNames.push(n);
     }
   }
@@ -1880,7 +2169,7 @@ function inferSceneFocusFromNames(panelCharacters = [], visualText = "", dialogu
   if (explicit.length >= 2) return "two_characters";
   if (explicit.length === 1) return "single_character";
 
-  const names = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
+  const names = extractDetectedCharacterNames(`${visualText} ${dialogueText}`);
   const unique = [...new Set(names.map(n => normalizeName(n).toLowerCase()))];
 
   if (unique.length >= 3) return "group_scene";
@@ -2345,14 +2634,16 @@ ${safePrompt}
 
       for (const panel of page.panels) {
         const panelSeed = baseStyleSeed + page.page * 100 + panelIndex;
-        const visualText = panel.imagePrompt || "";
-        const dialogueText = panel.dialogue || "";
-        const combinedPanelText = `${visualText} ${dialogueText}`;
-        const hasAbility = detectAbilityKeywords(combinedPanelText);
-        const abilityDetails = buildAbilityDetails(combinedPanelText);
+  const visualText = panel.imagePrompt || "";
+  const dialogueText = panel.dialogue || "";
+  const combinedPanelText = `${visualText} ${dialogueText}`;
+  const hasAbility = detectAbilityKeywords(combinedPanelText);
+  const abilityDetails = buildAbilityDetails(combinedPanelText);
+  const creatureDetails = buildCreatureDetails(combinedPanelText);
+  const hasCreatures = detectCreatureKeywords(combinedPanelText).length > 0;
 
-        const abilityPromptBlock = hasAbility
-          ? `
+  const abilityPromptBlock = hasAbility
+    ? `
 ABILITY VISUAL RULES:
 the character is actively using a visible ability,
 the power must be clearly visible,
@@ -2363,23 +2654,48 @@ show impact on the environment if appropriate,
 visual effects must match the described power,
 ${abilityDetails}
 `
-          : "";
+    : "";
 
-        const inferredNames = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
-        const rawPanelNames = Array.isArray(panel.characters) ? panel.characters : [];
+  const creaturePromptBlock = hasCreatures
+    ? `
+CREATURE VISUAL RULES:
+if the prompt mentions goblin or goblin lord, show a monster, not a human,
+enemy must be non-human,
+do not replace monsters with anime girls,
+do not feminize monsters,
+goblin lord must look brutal, monstrous and male-coded if described as such,
+NON-HUMAN CREATURE:
+grotesque anatomy,
+asymmetrical face,
+deformed proportions,
+monstrous skin texture,
+non-beautiful,
+non-human facial structure,
+avoid anime human face,
+creature must look threatening and unnatural
 
-        let combinedNames = [...rawPanelNames, ...inferredNames]
-          .map((n) => normalizeName(n))
-          .filter(Boolean);
+CREATURE DETAILS:
+${creatureDetails}
+`
+    : "";
 
-        combinedNames = dedupeNames(combinedNames);
-        combinedNames = prioritizeStoryCharacters(combinedNames, dialogueText, visualText);
+ const rawPanelNames = Array.isArray(panel.characters) ? panel.characters : [];
+const inferredNames = await extractDetectedCharacterNamesForTitle(
+  title,
+  `${visualText} ${dialogueText}`
+);
 
-        const forcedImportant = combinedNames.filter((n) =>
-          ["karol", "cristian", "kelvin", "mefisto"].includes(String(n).toLowerCase())
-        );
+let combinedNames = [...rawPanelNames, ...inferredNames]
+  .map((n) => canonicalizeCharacterName(n))
+  .filter(Boolean);
+combinedNames = dedupeCanonicalNames(combinedNames);
+const uniqueDetected = dedupeCanonicalNames(combinedNames);
 
-        const uniqueDetected = dedupeNames(combinedNames);
+const forcedImportant = combinedNames.filter((n) =>
+  LOCKED_CHARACTER_NAMES.some(
+    (locked) => locked.toLowerCase() === canonicalizeCharacterName(n).toLowerCase()
+  )
+);
         const strongTwoCharacterScene = isStrongTwoCharacterScene(dialogueText, visualText);
 
         let sceneFocus =
@@ -2440,13 +2756,25 @@ ${abilityDetails}
           } else if (Array.isArray(panelCharacters) && panelCharacters.length > 0) {
             names = panelCharacters;
           } else {
-            names = extractTrackedCharacterNames(`${visualText} ${dialogueText}`);
+            names = extractDetectedCharacterNames(`${visualText} ${dialogueText}`);
           }
 
           names = prioritizeStoryCharacters(names, dialogueText, visualText);
-          names = names.filter((n) =>
-            ["karol", "cristian", "kelvin", "mefisto"].includes(String(n).toLowerCase())
-          );
+          const existingCharacters = await findCharactersByNames(title, names);
+const existingNamesSet = new Set(
+  existingCharacters.map((c) => normalizeNameLower(c.name))
+);
+
+names = names.filter((n) => {
+  const lower = normalizeNameLower(n);
+
+  if (isBannedGenericCharacterName(lower)) return false;
+
+  return (
+    DETECTABLE_CHARACTER_NAMES.some((x) => x.toLowerCase() === lower) ||
+    existingNamesSet.has(lower)
+  );
+});
 
           if (forcedImportant.length >= 2) {
             names = [...forcedImportant, ...names.filter(n => !forcedImportant.includes(n))];
@@ -2456,24 +2784,36 @@ ${abilityDetails}
           const uniqueNames = dedupeNames(names).slice(0, limit);
 
           for (const rawName of uniqueNames) {
-            const name = normalizeName(rawName);
-            if (!name) continue;
+  const name = normalizeName(rawName);
+  if (!name) continue;
+  if (isBannedGenericCharacterName(name)) continue;
 
-            let character = await findCharacter(title, name);
+  let character = await findCharacter(title, name);
 
-            if (!character || (character.profileVersion || 1) < CURRENT_PROFILE_VERSION) {
-              character = await createOrUpdateCharacter(
-                title,
-                name,
-                `${visualText}\n${dialogueText}`,
-                globalStylePreset
-              );
-            }
+  if (!character) {
+    character = await createOrUpdateCharacter(
+      title,
+      name,
+      `${visualText}\n${dialogueText}`,
+      globalStylePreset
+    );
+  } else if (
+    (!character.referenceImage || !character.identityPrompt) &&
+    (character.profileVersion || 1) < CURRENT_PROFILE_VERSION
+  ) {
+    character = await createOrUpdateCharacter(
+      title,
+      name,
+      `${visualText}\n${dialogueText}`,
+      globalStylePreset
+    );
+  }
 
-            character = await ensureCharacterReference(character);
+  if (!character) continue;
 
-            charactersData.push(character);
-          }
+  character = await ensureCharacterReference(character);
+  charactersData.push(character);
+}
 
           charactersData = dedupeCharacters(charactersData);
         }
@@ -2487,7 +2827,6 @@ ${abilityDetails}
             uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
             uniqueDetected[0] ||
             null;
-
           const preferredSingleCharacter = preferReferenceCharacter(
             charactersData,
             preferredSingleName
@@ -2555,6 +2894,7 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+${creaturePromptBlock}
 
 ${abilityPromptBlock}
 
@@ -2653,6 +2993,7 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+${creaturePromptBlock}
 
 ${abilityPromptBlock}
 
@@ -2767,6 +3108,12 @@ left character and right character,
 medium two-shot or medium wide shot,
 clear separation between both characters,
 visible gap between bodies,
+INTERACTION RULE:
+no physical contact unless explicitly stated,
+maintain personal space,
+neutral or tense distance,
+focus on eye contact or stance,
+no romantic or intimate positioning unless specified
 no touching,
 hands separated,
 arms separated,
@@ -2808,15 +3155,19 @@ ${charB.gender === "female"
   : "male body, masculine face, no female traits"}
 
 STRICT CHARACTER CONSISTENCY:
-same face,
+same face identity,
 same hair color,
 same hairstyle,
 same eye color,
-same outfit,
 same proportions,
-no variation allowed,
-no reinterpretation,
-no alternate design,
+same recognizable character,
+allow pose variation,
+allow expression variation,
+allow action variation,
+allow outfit variation if the scene requires it,
+allow technique-driven visual changes,
+no reinterpretation into a different person,
+no alternate identity,
 do not change hair color under any lighting,
 do not change identity between panels
 
@@ -2831,6 +3182,8 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+
+${creaturePromptBlock}
 
 PERSISTENT ABILITY A:
 ${persistentAbilityA}
@@ -2861,6 +3214,7 @@ both characters readable
             );
 
           const persistentAbilityBlock = buildPersistentAbilityBlock(char, combinedPanelText);
+          const techniqueVariationBlock = buildTechniqueVariationBlock(char, combinedPanelText);
           const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
           const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
           const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
@@ -2915,12 +3269,15 @@ ${visualText}
 
 EMOTIONAL CONTEXT:
 ${dialogueText}
-
+TECHNIQUE VARIATION:
+${techniqueVariationBlock}
 ENVIRONMENT DETAILS:
 ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+
+${creaturePromptBlock}
 
 PERSISTENT CHARACTER ABILITY:
 ${persistentAbilityBlock}
@@ -2998,6 +3355,15 @@ use the same established reference identity
           if (viewAngle === "back") {
             finalPrompt = `
 single character focus,
+CHARACTER VARIATION RULES:
+same identity, different scene,
+same face, different pose,
+same face, different expression,
+same face, different action,
+same face, different framing,
+allow dynamic combat movement if the scene requires it,
+allow visible technique effects if the scene requires it,
+do not repeat the same portrait composition every panel,
 only ${char.name} visible,
 no other people,
 ${stylePreset},
@@ -3019,6 +3385,7 @@ must match the dialogue context,
 no unrelated objects,
 focus on the character involved in the dialogue,
 
+${creaturePromptBlock}
 PERSISTENT CHARACTER ABILITY:
 ${persistentAbilityBlock}
 
@@ -3045,6 +3412,15 @@ no random cropping
           } else if (viewAngle === "profile") {
             finalPrompt = `
 single character focus,
+CHARACTER VARIATION RULES:
+same identity, different scene,
+same face, different pose,
+same face, different expression,
+same face, different action,
+same face, different framing,
+allow dynamic combat movement if the scene requires it,
+allow visible technique effects if the scene requires it,
+do not repeat the same portrait composition every panel,
 only ${char.name} visible,
 no other people,
 profile view,
@@ -3108,11 +3484,25 @@ cinematic storytelling
           } else {
             finalPrompt = `
 single character focus,
+CHARACTER VARIATION RULES:
+same identity, different scene,
+same face, different pose,
+same face, different expression,
+same face, different action,
+same face, different framing,
+allow dynamic combat movement if the scene requires it,
+allow visible technique effects if the scene requires it,
+do not repeat the same portrait composition every panel,
 only ${char.name} visible,
 no other people,
-portrait shot,
-upper body visible,
-full face visible,
+portrait shot or medium action shot depending on the scene,
+if a technique is active, prefer medium wide shot,
+if a technique is active, prefer three-quarter body or full body,
+if a technique is active, do not use tight portrait framing,
+upper body visible only when no ability is active,
+full face visible or mostly visible,
+three-quarter body preferred during combat,
+full body allowed if action or technique requires it,
 full head visible,
 neck visible,
 shoulders visible,
@@ -3352,8 +3742,25 @@ function detectSceneType(imagePrompt) {
 
   const envs = detectEnvironmentKeywords(t);
   const objs = detectObjectKeywords(t);
+  const creatures = detectCreatureKeywords(t);
 
   if (detectGroupScene(t)) return "group_scene";
+
+  if (
+    creatures.length &&
+    (
+      t.includes("man") ||
+      t.includes("woman") ||
+      t.includes("character") ||
+      t.includes("cultivator") ||
+      t.includes("girl") ||
+      t.includes("boy")
+    )
+  ) {
+    return "character_in_environment";
+  }
+
+  if (creatures.length) return "group_scene";
 
   if (
     envs.length &&
@@ -3386,4 +3793,81 @@ function detectSceneType(imagePrompt) {
   }
 
   return "single_character";
+}
+function detectCreatureKeywords(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  const words = [
+    "goblin",
+    "goblin lord",
+    "monster",
+    "monstruo",
+    "bestia",
+    "creature",
+    "criatura",
+    "orc",
+    "demon",
+    "beast"
+  ];
+
+  return words.filter(w => t.includes(w));
+}
+
+function buildCreatureDetails(text = "") {
+  const t = String(text || "").toLowerCase();
+  const parts = [];
+
+  if (t.includes("goblin lord")) {
+    parts.push("massive goblin lord, monstrous humanoid creature, dark green skin, brutal face, sharp teeth, large iron sword, menacing non-human anatomy");
+  } else if (t.includes("goblin")) {
+    parts.push("small savage goblin, green skin, monstrous face, sharp ears, ugly non-human creature, crude weapon");
+  }
+
+  if (t.includes("monster") || t.includes("monstruo") || t.includes("bestia")) {
+    parts.push("clearly non-human enemy, monster anatomy, threatening creature design");
+  }
+
+  return parts.join(", ");
+}
+
+function buildTechniqueVariationBlock(character, panelText = "") {
+  if (!character) return "";
+
+  const lowerName = String(character.name || "").toLowerCase();
+  const text = String(panelText || "").toLowerCase();
+  const hasAbility = detectAbilityKeywords(text);
+
+  if (!hasAbility) return "";
+
+  if (lowerName === "kelvin") {
+    return `
+KELVIN TECHNIQUE VISUAL MODE:
+same exact Kelvin face,
+same short black hair,
+same dark eyes,
+same masculine identity,
+dynamic battle pose,
+combat stance variation,
+body movement,
+impact motion,
+golden battle aura clearly visible,
+golden flames clearly visible,
+shockwave distortion,
+power release affecting the environment,
+war-god presence,
+do not make Kelvin look static,
+do not repeat the same portrait composition,
+do not hide the technique,
+the technique must visibly change the scene
+`;
+  }
+
+  return `
+TECHNIQUE VISUAL MODE:
+same exact character identity,
+dynamic pose variation,
+visible power release,
+environment reacting to the power,
+do not repeat the same static composition
+`;
 }
