@@ -659,7 +659,57 @@ scene must feel populated,
 do not make it a solo portrait
 `;
 }
+function isEnvironmentDominantScene(text = "") {
+  const t = String(text || "").toLowerCase();
+  const envs = detectEnvironmentKeywords(t);
+  const creatures = detectCreatureKeywords(t);
+  const objs = detectObjectKeywords(t);
+  const hasAbility = detectAbilityKeywords(t);
 
+  if (!envs.length) return false;
+  if (creatures.length) return false;
+  if (hasAbility) return false;
+
+  // si explícitamente pide primer plano de personaje, no forzar entorno
+  if (
+    t.includes("close-up") ||
+    t.includes("primer plano") ||
+    t.includes("rostro") ||
+    t.includes("cara") ||
+    t.includes("face") ||
+    t.includes("portrait")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isCreatureDominantScene(text = "") {
+  const t = String(text || "").toLowerCase();
+  const creatures = detectCreatureKeywords(t);
+
+  if (!creatures.length) return false;
+
+  // si además hay poder/habilidad humana, no forzamos monstruo total
+  if (detectAbilityKeywords(t)) return false;
+
+  return true;
+}
+
+function isObjectDominantScene(text = "") {
+  const t = String(text || "").toLowerCase();
+  const objs = detectObjectKeywords(t);
+  const envs = detectEnvironmentKeywords(t);
+  const creatures = detectCreatureKeywords(t);
+
+  if (!objs.length) return false;
+  if (envs.length) return false;
+  if (creatures.length) return false;
+  if (detectAbilityKeywords(t)) return false;
+
+  return true;
+}
 function inferNarrativeVisualFocus({
   visualText = "",
   dialogueText = "",
@@ -2699,29 +2749,59 @@ const forcedImportant = combinedNames.filter((n) =>
         const strongTwoCharacterScene = isStrongTwoCharacterScene(dialogueText, visualText);
 
         let sceneFocus =
-          inferNarrativeVisualFocus({
-            visualText,
-            dialogueText,
-            panelCharacters: panel.characters
-          }) ||
-          panel.sceneFocus ||
-          inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
-          detectSceneType(visualText);
+  inferNarrativeVisualFocus({
+    visualText,
+    dialogueText,
+    panelCharacters: panel.characters
+  }) ||
+  panel.sceneFocus ||
+  inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
+  detectSceneType(visualText);
 
-        let viewAngle = panel.viewAngle || detectViewAngle(visualText);
-        const panelCharacters = Array.isArray(panel.characters) ? panel.characters : [];
+let viewAngle = panel.viewAngle || detectViewAngle(visualText);
+const panelCharacters = Array.isArray(panel.characters) ? panel.characters : [];
+const combinedSceneText = `${visualText} ${dialogueText}`;
 
-        if (sceneFocus === "environment" && uniqueDetected.length >= 1) {
-          sceneFocus = "character_in_environment";
-        }
+const environmentDominant = isEnvironmentDominantScene(combinedSceneText);
+const creatureDominant = isCreatureDominantScene(combinedSceneText);
+const objectDominant = isObjectDominantScene(combinedSceneText);
 
-        if (sceneFocus === "environment" && hasCharacterPresence(visualText, panelCharacters)) {
-          sceneFocus = "character_in_environment";
-        }
+// PRIORIDAD REAL
+if (creatureDominant) {
+  sceneFocus = "creature_focus";
+} else if (environmentDominant) {
+  sceneFocus = "environment";
+} else if (objectDominant) {
+  sceneFocus = "object_focus";
+}
 
-        if (uniqueDetected.length >= 2 && strongTwoCharacterScene) {
-          sceneFocus = "two_characters";
-        }
+// solo permitir escenas de dos personajes si NO domina entorno/objeto/monstruo
+if (
+  !environmentDominant &&
+  !objectDominant &&
+  !creatureDominant &&
+  uniqueDetected.length >= 2 &&
+  strongTwoCharacterScene
+) {
+  sceneFocus = "two_characters";
+}
+
+// NO convertir automáticamente entorno a personaje si el entorno debe dominar
+if (
+  sceneFocus === "environment" &&
+  !environmentDominant &&
+  uniqueDetected.length >= 1
+) {
+  sceneFocus = "character_in_environment";
+}
+
+if (
+  sceneFocus === "environment" &&
+  !environmentDominant &&
+  hasCharacterPresence(visualText, panelCharacters)
+) {
+  sceneFocus = "character_in_environment";
+}
 
         if (shouldForceFaceView(dialogueText, visualText, panelCharacters)) {
           if (
@@ -2747,7 +2827,8 @@ const forcedImportant = combinedNames.filter((n) =>
 
         if (
           sceneFocus !== "environment" &&
-          sceneFocus !== "object_focus"
+          sceneFocus !== "object_focus" &&
+          sceneFocus !== "creature_focus"
         ) {
           let names = [];
 
@@ -2818,8 +2899,8 @@ names = names.filter((n) => {
           charactersData = dedupeCharacters(charactersData);
         }
 
-        if (sceneFocus === "two_characters" && charactersData.length < 2) {
-          sceneFocus = "character_in_environment";
+       if (sceneFocus === "two_characters" && charactersData.length < 2) {
+          sceneFocus = "single_character";
         }
 
         if (sceneFocus === "single_character" && charactersData.length > 1) {
@@ -2964,6 +3045,58 @@ clear narrative emphasis,
 if the story mentions a weapon, the weapon must be visible,
 if the story mentions lights, the lights must be visible,
 if the story mentions an artifact, altar, scroll or portal, it must be visible
+`;
+} else if (sceneFocus === "creature_focus") {
+  const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+  const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
+
+  finalPrompt = `
+CREATURE DOMINANT PANEL,
+monster is the main subject,
+do not reduce the panel to a hero portrait,
+do not place a human face as the foreground focus,
+the creature must occupy most of the frame,
+the monster must be clearly visible,
+non-human anatomy,
+grotesque anatomy,
+threatening posture,
+ugly asymmetrical face,
+monster-focused composition,
+if goblin or goblin lord is mentioned, it must look monstrous and non-human,
+
+${stylePreset},
+
+SCENE ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+${creaturePromptBlock}
+
+${abilityPromptBlock}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+creature dominance,
+enemy clearly visible,
+violent monster presence,
+dark fantasy horror energy,
+no anime hero portrait,
+no pretty humanoid monster,
+no foreground protagonist
 `;
         } else if (sceneFocus === "group_scene") {
           const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
@@ -3583,7 +3716,12 @@ cinematic scene
         let imageResult;
         let payload;
 
-        if (sceneFocus === "environment" || sceneFocus === "object_focus" || sceneFocus === "group_scene") {
+       if (
+  sceneFocus === "environment" ||
+  sceneFocus === "object_focus" ||
+  sceneFocus === "group_scene" ||
+  sceneFocus === "creature_focus"
+) {
           payload = {
             prompt: finalPrompt,
             seed: null,
