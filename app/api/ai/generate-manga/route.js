@@ -111,6 +111,91 @@ const CURRENT_PROFILE_VERSION = 10;
 function normalizeName(name) {
   return String(name || "").trim();
 }
+function getDefaultPanelAnimation(panel = {}) {
+  const panelKind = String(panel?.panelKind || "").toLowerCase();
+  const sceneFocus = String(panel?.sceneFocus || "").toLowerCase();
+  const imagePrompt = String(panel?.imagePrompt || "").toLowerCase();
+  const dialogue = String(panel?.dialogue || "").toLowerCase();
+  const combined = `${imagePrompt} ${dialogue}`;
+
+  if (
+    panelKind === "action" ||
+    combined.includes("attack") ||
+    combined.includes("ataque") ||
+    combined.includes("shockwave") ||
+    combined.includes("explosion") ||
+    combined.includes("golpe")
+  ) {
+    return {
+      camera: "impact_zoom",
+      motion: "action",
+      transition: "blur_cut",
+      frameHint: "multi_5",
+      duration: 1.4,
+      intensity: 0.85
+    };
+  }
+
+  if (
+    combined.includes("ability") ||
+    combined.includes("habilidad") ||
+    combined.includes("aura") ||
+    combined.includes("transform") ||
+    combined.includes("ira del dios de la guerra") ||
+    combined.includes("llamas doradas")
+  ) {
+    return {
+      camera: "fast_zoom",
+      motion: "burst",
+      transition: "flash",
+      frameHint: "multi_5",
+      duration: 1.6,
+      intensity: 0.9
+    };
+  }
+
+  if (sceneFocus === "environment" || panelKind === "panoramic_top") {
+    return {
+      camera: "vertical_pan",
+      motion: "environment_drift",
+      transition: "fade",
+      frameHint: "multi_3",
+      duration: 2.4,
+      intensity: 0.25
+    };
+  }
+
+  if (panelKind === "dialogue") {
+    return {
+      camera: "slow_push",
+      motion: "dialogue",
+      transition: "cut",
+      frameHint: "multi_3",
+      duration: 1.9,
+      intensity: 0.2
+    };
+  }
+
+  if (panelKind === "emotional_closeup") {
+    return {
+      camera: "slow_push",
+      motion: "tension",
+      transition: "fade",
+      frameHint: "multi_3",
+      duration: 2.1,
+      intensity: 0.3
+    };
+  }
+
+  return {
+    camera: "slow_push",
+    motion: "idle",
+    transition: "fade",
+    frameHint: "single",
+    duration: 1.8,
+    intensity: 0.35
+  };
+}
 function isBannedGenericCharacterName(name) {
   const lower = normalizeName(name).toLowerCase();
   if (!lower) return true;
@@ -1263,20 +1348,21 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
   const normalizedCharacters = dedupeCharacters(charactersInPanel || []);
 
   if (!normalizedCharacters || normalizedCharacters.length === 0) {
-    return {
-      prompt: panel.imagePrompt,
-      seed: null,
-      styleSeed: panelSeed,
-      gender: null,
-      identityPrompt: "",
-      referenceImage: null,
-      characterCount: 0,
-      duoType: null,
-      abilityName: "",
-      abilityPrompt: "",
-      abilityColor: "",
-      abilityVfx: [],
-    };
+   return {
+  prompt: panel.imagePrompt,
+  seed: null,
+  styleSeed: panelSeed,
+  gender: null,
+  identityPrompt: "",
+  referenceImage: null,
+  characterCount: 0,
+  duoType: null,
+  abilityName: "",
+  abilityPrompt: "",
+  abilityColor: "",
+  abilityVfx: [],
+  animation: panel.animation || getDefaultPanelAnimation(panel)
+};
   }
 
   if (normalizedCharacters.length === 1) {
@@ -1284,19 +1370,20 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
     char = await ensureCharacterReference(char);
 
     return {
-      prompt: panel.imagePrompt,
-      seed: char.seed || null,
-      styleSeed: panelSeed,
-      gender: char.gender || null,
-      identityPrompt: char.identityPrompt || "",
-      referenceImage: char.referenceImage || null,
-      characterCount: 1,
-      duoType: null,
-      abilityName: char.abilityName || "",
-      abilityPrompt: char.abilityPrompt || "",
-      abilityColor: char.abilityColor || "",
-      abilityVfx: Array.isArray(char.abilityVfx) ? char.abilityVfx : [],
-    };
+  prompt: panel.imagePrompt,
+  seed: char.seed || null,
+  styleSeed: panelSeed,
+  gender: char.gender || null,
+  identityPrompt: char.identityPrompt || "",
+  referenceImage: char.referenceImage || null,
+  characterCount: 1,
+  duoType: null,
+  abilityName: char.abilityName || "",
+  abilityPrompt: char.abilityPrompt || "",
+  abilityColor: char.abilityColor || "",
+  abilityVfx: Array.isArray(char.abilityVfx) ? char.abilityVfx : [],
+  animation: panel.animation || getDefaultPanelAnimation(panel)
+};
   }
 
   const sorted = sortCharactersForConsistency(normalizedCharacters).slice(0, 2);
@@ -1304,44 +1391,45 @@ async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null
   const charB = await ensureCharacterReference(sorted[1]);
 
   return {
-    prompt: panel.imagePrompt,
-    seed: generatePairSeed(charA.seed, charB.seed),
-    styleSeed: panelSeed,
-    gender: null,
-    characterCount: 2,
-    duoType: getDuoType(charA, charB),
+  prompt: panel.imagePrompt,
+  seed: generatePairSeed(charA.seed, charB.seed),
+  styleSeed: panelSeed,
+  gender: null,
+  characterCount: 2,
+  duoType: getDuoType(charA, charB),
 
-    characterA: {
-      name: charA.name,
-      gender: charA.gender || null,
-      identityPrompt: charA.identityPrompt || "",
-      seed: charA.seed || null,
-      referenceImage: charA.referenceImage || null,
-      abilityName: charA.abilityName || "",
-      abilityPrompt: charA.abilityPrompt || "",
-      abilityColor: charA.abilityColor || "",
-      abilityVfx: Array.isArray(charA.abilityVfx) ? charA.abilityVfx : [],
-    },
+  characterA: {
+    name: charA.name,
+    gender: charA.gender || null,
+    identityPrompt: charA.identityPrompt || "",
+    seed: charA.seed || null,
+    referenceImage: charA.referenceImage || null,
+    abilityName: charA.abilityName || "",
+    abilityPrompt: charA.abilityPrompt || "",
+    abilityColor: charA.abilityColor || "",
+    abilityVfx: Array.isArray(charA.abilityVfx) ? charA.abilityVfx : [],
+  },
 
-    characterB: {
-      name: charB.name,
-      gender: charB.gender || null,
-      identityPrompt: charB.identityPrompt || "",
-      seed: charB.seed || null,
-      referenceImage: charB.referenceImage || null,
-      abilityName: charB.abilityName || "",
-      abilityPrompt: charB.abilityPrompt || "",
-      abilityColor: charB.abilityColor || "",
-      abilityVfx: Array.isArray(charB.abilityVfx) ? charB.abilityVfx : [],
-    },
+  characterB: {
+    name: charB.name,
+    gender: charB.gender || null,
+    identityPrompt: charB.identityPrompt || "",
+    seed: charB.seed || null,
+    referenceImage: charB.referenceImage || null,
+    abilityName: charB.abilityName || "",
+    abilityPrompt: charB.abilityPrompt || "",
+    abilityColor: charB.abilityColor || "",
+    abilityVfx: Array.isArray(charB.abilityVfx) ? charB.abilityVfx : [],
+  },
 
-    referenceImage: null,
-    identityPrompt: null,
-    abilityName: "",
-    abilityPrompt: "",
-    abilityColor: "",
-    abilityVfx: [],
-  };
+  referenceImage: null,
+  identityPrompt: null,
+  abilityName: "",
+  abilityPrompt: "",
+  abilityColor: "",
+  abilityVfx: [],
+  animation: panel.animation || getDefaultPanelAnimation(panel)
+};
 }
 
 function extractFirstJsonObject(text) {
@@ -1708,21 +1796,28 @@ RECOGNIZABLE AS SAME CHARACTER
         name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
       },
       {
-        $set: {
-          identityPrompt,
-          seed,
-          gender: "female",
-          visualStylePreset: stylePreset,
-          profileVersion: CURRENT_PROFILE_VERSION,
-          lockIdentity: true,
-          cultivationLevel: existingCharacter?.cultivationLevel || "D3",
-          evolutionStage: existingCharacter?.evolutionStage || 1,
-          abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
-          abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
-          abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
-          abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
-          abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
-        },
+       $set: {
+  identityPrompt,
+  seed,
+  gender: "female",
+  visualStylePreset: stylePreset,
+  profileVersion: CURRENT_PROFILE_VERSION,
+  lockIdentity: isLockedCharacterName(cleanName),
+
+  cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+  evolutionStage: existingCharacter?.evolutionStage || 1,
+
+  abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+  abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+  abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
+  abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+  abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
+
+  // 🔥 NUEVO
+  combatStyle: existingCharacter?.combatStyle || "balanced",
+  preferredShots: existingCharacter?.preferredShots?.length ? existingCharacter.preferredShots : [],
+  animationProfile: existingCharacter?.animationProfile || "standard",
+},
         $setOnInsert: {
           name: cleanName,
           referenceImage: null,
@@ -1766,21 +1861,28 @@ recognizable male silhouette
         name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
       },
       {
-        $set: {
-          identityPrompt,
-          seed,
-          gender: "male",
-          visualStylePreset: stylePreset,
-          profileVersion: CURRENT_PROFILE_VERSION,
-          lockIdentity: true,
-          cultivationLevel: existingCharacter?.cultivationLevel || "D3",
-          evolutionStage: existingCharacter?.evolutionStage || 1,
-          abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
-          abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
-          abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
-          abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
-          abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
-        },
+       $set: {
+  identityPrompt,
+  seed,
+  gender: "male",
+  visualStylePreset: stylePreset,
+  profileVersion: CURRENT_PROFILE_VERSION,
+  lockIdentity: isLockedCharacterName(cleanName),
+
+  cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+  evolutionStage: existingCharacter?.evolutionStage || 1,
+
+  abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+  abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+  abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
+  abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+  abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
+
+  // 🔥 NUEVO
+  combatStyle: existingCharacter?.combatStyle || "balanced",
+  preferredShots: existingCharacter?.preferredShots?.length ? existingCharacter.preferredShots : [],
+  animationProfile: existingCharacter?.animationProfile || "standard",
+},
         $setOnInsert: {
           name: cleanName,
           referenceImage: null,
@@ -2002,20 +2104,27 @@ no androgynous traits
     },
     {
       $set: {
-        identityPrompt,
-        seed,
-        gender,
-        visualStylePreset: stylePreset,
-        profileVersion: CURRENT_PROFILE_VERSION,
-        lockIdentity: isLockedCharacterName(cleanName),
-        cultivationLevel: existingCharacter?.cultivationLevel || "D3",
-        evolutionStage: existingCharacter?.evolutionStage || 1,
-        abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
-        abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
-        abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
-        abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
-        abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
-      },
+  identityPrompt,
+  seed,
+  gender: "male",
+  visualStylePreset: stylePreset,
+  profileVersion: CURRENT_PROFILE_VERSION,
+  lockIdentity: isLockedCharacterName(cleanName),
+
+  cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+  evolutionStage: existingCharacter?.evolutionStage || 1,
+
+  abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+  abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+  abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : defaultAbility.abilityElements,
+  abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+  abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : defaultAbility.abilityVfx,
+
+  // 🔥 NUEVO
+  combatStyle: existingCharacter?.combatStyle || "balanced",
+  preferredShots: existingCharacter?.preferredShots?.length ? existingCharacter.preferredShots : [],
+  animationProfile: existingCharacter?.animationProfile || "standard",
+},
       $setOnInsert: {
         name: cleanName,
         referenceImage: null,
@@ -2426,8 +2535,9 @@ ${dialogueText}
 `;
 }
 
-function getStoryProfile(contentProfile = "tiktok") {
-  const mode = String(contentProfile || "tiktok").toLowerCase();
+
+function getStoryProfile(contentProfile = "manga_long") {
+  const mode = String(contentProfile || "manga_long").toLowerCase();
 
   if (mode === "youtube") {
     return {
@@ -2457,12 +2567,15 @@ function getStoryProfile(contentProfile = "tiktok") {
 `,
       storyboardFormat: "cinematic horizontal manga storyboard",
       defaultPanelTag: "horizontal cinematic panel",
+      targetPages: { min: 8, max: 14 },
+      panelsPerPage: { min: 2, max: 4 }
     };
   }
 
-  return {
-    mode: "tiktok",
-    dialogueRule: `
+  if (mode === "tiktok") {
+    return {
+      mode: "tiktok",
+      dialogueRule: `
 - Each dialogue beat must be short and emotionally direct.
 - Prefer 3 to 8 words per panel when possible.
 - Avoid long exposition.
@@ -2471,21 +2584,60 @@ function getStoryProfile(contentProfile = "tiktok") {
 - Prefer punchy narration over descriptive paragraphs.
 - End the last panel with a strong cliffhanger or unresolved tension.
 `,
-    panelRule: `
+      panelRule: `
 - Prefer more panels with shorter text.
 - Each panel should feel like a mini dramatic beat.
 - Prioritize retention and impact.
 - The first panel must hook immediately.
 `,
-    imageRule: `
+      imageRule: `
 - Compose scenes for vertical mobile framing.
 - Prefer strong central focus.
 - Use close-ups, medium shots and vertical dramatic composition.
 - Keep the focal character large and readable.
 - If the story mentions a tower, arena, sect, weapon, altar, portal, lights or other narrative object, it must still be visible.
 `,
-    storyboardFormat: "high-retention vertical short-form manga storyboard",
-    defaultPanelTag: "vertical webtoon panel",
+      storyboardFormat: "high-retention vertical short-form manga storyboard",
+      defaultPanelTag: "vertical webtoon panel",
+      targetPages: { min: 5, max: 9 },
+      panelsPerPage: { min: 1, max: 3 }
+    };
+  }
+
+  return {
+    mode: "manga_long",
+    dialogueRule: `
+- Preserve the chapter's narrative richness.
+- Do NOT over-compress exposition.
+- Dialogue can be short, medium, or long depending on the beat.
+- Allow narration boxes when useful.
+- Keep emotional continuity, escalation and worldbuilding.
+- Break long narrative blocks into multiple progressive beats instead of summarizing them.
+- If the chapter contains several events, each event must get its own visual sequence.
+- Never collapse multiple important events into a single panel.
+- Important speeches may span multiple panels.
+`,
+    panelRule: `
+- This is a long-form manga chapter, not a short-form recap.
+- Prefer 3 to 5 panels per page.
+- Prefer many pages when the source text is long.
+- Each important paragraph, event, reveal, explanation, combat beat, training beat or location change must be expanded into 1 to 3 panels minimum.
+- Scene transitions must be shown visually.
+- Do not skip setup, reaction, consequence or atmosphere.
+- The chapter must feel paced, cinematic and progressive.
+`,
+    imageRule: `
+- Compose scenes as long-form vertical manga pages.
+- Keep variety between close-up, medium shot, wide shot, environment shot and action shot.
+- If the story mentions a city, tower, arena, library, sect, jungle, ruins, weapon, altar, lights, crystal, portal or beast, it must appear visually when relevant.
+- Use establishing shots for new locations.
+- Use reaction shots for emotional moments.
+- Use multiple panels for training montages, tournament announcements, rule explanations and battle setups.
+`,
+    storyboardFormat: "long-form dark seinen manga storyboard",
+    defaultPanelTag: "vertical manga panel",
+    targetPages: { min: 12, max: 22 },
+    panelsPerPage: { min: 3, max: 5 }
   };
 }
 
@@ -2503,6 +2655,210 @@ function buildOpeningHook(title, prompt) {
 
   return `${firstSentence.slice(0, 90).trim()}...`;
 }
+function splitStoryIntoNarrativeBlocks(prompt = "") {
+  return String(prompt || "")
+    .replace(/\r/g, "\n")
+    .split(/\n{2,}/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function countWords(text = "") {
+  return String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function countStoryboardPanels(storyboard) {
+  if (!storyboard?.pages || !Array.isArray(storyboard.pages)) return 0;
+
+  return storyboard.pages.reduce((acc, page) => {
+    const panels = Array.isArray(page?.panels) ? page.panels.length : 0;
+    return acc + panels;
+  }, 0);
+}
+
+function estimateStoryboardTargets(prompt = "", storyProfile = {}) {
+  const blocks = splitStoryIntoNarrativeBlocks(prompt);
+  const words = countWords(prompt);
+
+  const explicitHeadingsBonus = (String(prompt || "").match(/[📜⚖️🔥❄️🌸🍂]/g) || []).length;
+  const paragraphCount = Math.max(blocks.length, 1);
+
+  let estimatedPages;
+
+  if (storyProfile?.mode === "tiktok") {
+    estimatedPages = Math.max(
+      storyProfile?.targetPages?.min || 5,
+      Math.ceil(paragraphCount * 0.8)
+    );
+  } else if (storyProfile?.mode === "youtube") {
+    estimatedPages = Math.max(
+      storyProfile?.targetPages?.min || 8,
+      Math.ceil(paragraphCount * 1.0)
+    );
+  } else {
+    estimatedPages = Math.max(
+      storyProfile?.targetPages?.min || 12,
+      Math.ceil(paragraphCount * 1.35) + Math.ceil(words / 180) + explicitHeadingsBonus
+    );
+  }
+
+  const minPages = storyProfile?.targetPages?.min || 12;
+  const maxPages = storyProfile?.targetPages?.max || 22;
+
+  estimatedPages = Math.max(minPages, Math.min(maxPages, estimatedPages));
+
+  const minPanelsPerPage = storyProfile?.panelsPerPage?.min || 3;
+  const maxPanelsPerPage = storyProfile?.panelsPerPage?.max || 5;
+
+  const minPanels = estimatedPages * minPanelsPerPage;
+  const maxPanels = estimatedPages * maxPanelsPerPage;
+
+  return {
+    narrativeBlocks: paragraphCount,
+    words,
+    targetPages: estimatedPages,
+    minPages,
+    maxPages,
+    minPanels,
+    maxPanels,
+    minPanelsPerPage,
+    maxPanelsPerPage
+  };
+}
+
+async function expandStoryboardIfTooShort({
+  storyboard,
+  title,
+  safePrompt,
+  storyProfile,
+  previousPages = [],
+  openingHook
+}) {
+  const targets = estimateStoryboardTargets(safePrompt, storyProfile);
+  const currentPages = Array.isArray(storyboard?.pages) ? storyboard.pages.length : 0;
+  const currentPanels = countStoryboardPanels(storyboard);
+
+  const needsExpansion =
+  currentPages < targets.targetPages ||
+  currentPanels < Math.ceil(targets.minPanels * 1.15);
+
+  if (!needsExpansion) {
+    return storyboard;
+  }
+
+  const expandPrompt = `
+Expand this manga storyboard because it is too compressed.
+
+Return ONLY valid JSON in this exact structure:
+
+{
+  "pages":[
+    {
+      "page":1,
+      "panels":[
+        {
+          "type":"narration | speech | thought",
+          "dialogue":"",
+          "imagePrompt":"",
+          "characters":[],
+          "sceneFocus":"environment | object_focus | single_character | two_characters | group_scene | character_in_environment | creature_focus",
+          "panelKind":"panoramic_top | dialogue | emotional_closeup | action | standard",
+          "viewAngle":"front | profile | back",
+          "animation": {
+            "camera":"slow_push | fast_zoom | side_pan | vertical_pan | impact_zoom | orbit_feel",
+            "motion":"idle | dialogue | tension | action | burst | reveal | environment_drift",
+            "transition":"fade | cut | flash | blur_cut",
+            "frameHint":"single | multi_3 | multi_5",
+            "duration":1.8,
+            "intensity":0.35
+          }
+        }
+      ]
+    }
+  ]
+}
+
+MANDATORY EXPANSION RULES:
+- This is LONG-FORM manga, not a recap.
+- Expand the story into approximately ${targets.targetPages} pages.
+- Minimum pages required: ${targets.minPages}
+- Minimum total panels required: ${targets.minPanels}
+- Prefer ${targets.minPanelsPerPage} to ${targets.maxPanelsPerPage} panels per page.
+- Do NOT summarize multiple major events into one panel.
+- Every important paragraph or event must become its own visual sequence.
+- Include setup, reaction, atmosphere, transition and consequence.
+- Preserve all important locations, explanations, reveals, training beats, tournament setup, named characters and monster teasers.
+- If the chapter includes city intro, library, training, tournament, rules, competitors, teleportation, jungle arrival and beast reveal, each must appear in separate sequences.
+- Maintain narrative continuity and emotional progression.
+- Keep the first panel strong using this hook idea: "${openingHook}"
+- This is NOT a short-form summary.
+- Do NOT compress the chapter.
+- For long chapters, prefer 15 to 22 pages.
+- Never collapse city introduction, training, item acquisition, tournament rules, rival introductions, teleportation, arrival and monster reveal into a few panels.
+- Every major paragraph should become its own visual beat or sequence.
+
+Previous pages continuity:
+${previousPages.length ? JSON.stringify(previousPages).slice(0, 5000) : "[]"}
+
+Original story request:
+${safePrompt}
+
+Compressed storyboard to expand:
+${JSON.stringify(storyboard).slice(0, 18000)}
+`;
+
+  const expandRes = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.2,
+    messages: [{ role: "user", content: expandPrompt }]
+  });
+
+  const expanded = parseStoryboardJson(expandRes.choices[0].message.content);
+const expandedPages = Array.isArray(expanded?.pages) ? expanded.pages.length : 0;
+const expandedPanels = countStoryboardPanels(expanded);
+
+if (
+  expandedPages < targets.minPages ||
+  expandedPanels < targets.minPanels
+) {
+  console.warn("⚠️ Segunda expansión forzada por storyboard aún corto...");
+
+  const secondExpandPrompt = `
+Expand this storyboard AGAIN because it is still too compressed.
+
+Return ONLY valid JSON.
+
+Rules:
+- Minimum pages: ${targets.minPages}
+- Preferred pages: ${targets.targetPages} to ${targets.maxPages}
+- Minimum panels: ${targets.minPanels}
+- Prefer ${targets.minPanelsPerPage} to ${targets.maxPanelsPerPage} panels per page
+- Do NOT summarize
+- Do NOT skip narrative beats
+- Expand training, explanations, reactions, environment reveals, tournament rules, rival intros, teleportation and monster reveal
+
+Original story:
+${safePrompt}
+
+Compressed storyboard:
+${JSON.stringify(expanded).slice(0, 18000)}
+`;
+
+  const secondExpandRes = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.2,
+    messages: [{ role: "user", content: secondExpandPrompt }]
+  });
+
+  return parseStoryboardJson(secondExpandRes.choices[0].message.content);
+}
+
+return expanded;
+}
+
 
 export async function POST(req) {
   try {
@@ -2512,7 +2868,7 @@ export async function POST(req) {
       title,
       prompt,
       previousPages = [],
-      contentProfile = "tiktok",
+      contentProfile = "manga_long",
     } = await req.json();
 
     const safePrompt = String(prompt || "")
@@ -2534,7 +2890,7 @@ export async function POST(req) {
     const scriptPrompt = `
 Generate a dark seinen manga storyboard for ${storyProfile.storyboardFormat}.
 
-Return ONLY JSON:
+Return ONLY valid JSON with this exact structure:
 
 {
   "pages":[
@@ -2546,16 +2902,24 @@ Return ONLY JSON:
           "dialogue":"",
           "imagePrompt":"",
           "characters":[],
-          "sceneFocus":"environment | object_focus | single_character | two_characters | group_scene | character_in_environment",
+          "sceneFocus":"environment | object_focus | single_character | two_characters | group_scene | character_in_environment | creature_focus",
           "panelKind":"panoramic_top | dialogue | emotional_closeup | action | standard",
-          "viewAngle":"front | profile | back"
+          "viewAngle":"front | profile | back",
+          "animation": {
+            "camera":"slow_push | fast_zoom | side_pan | vertical_pan | impact_zoom | orbit_feel",
+            "motion":"idle | dialogue | tension | action | burst | reveal | environment_drift",
+            "transition":"fade | cut | flash | blur_cut",
+            "frameHint":"single | multi_3 | multi_5",
+            "duration":1.8,
+            "intensity":0.35
+          }
         }
       ]
     }
   ]
 }
 
-Rules:
+STRICT JSON RULES:
 - Return strictly valid JSON.
 - Do not include markdown.
 - Do not include explanation text before or after JSON.
@@ -2565,50 +2929,52 @@ Rules:
 - Never use unescaped double quotes inside dialogue or imagePrompt.
 - Replace quotes in dialogue with single quotes.
 - Do not include line breaks inside JSON string values.
+
+STORYBOARD LENGTH RULES:
+- The chapter MUST be expanded into a full manga sequence.
+- Generate between ${storyProfile.targetPages.min} and ${storyProfile.targetPages.max} pages.
+- Each page should usually contain between ${storyProfile.panelsPerPage.min} and ${storyProfile.panelsPerPage.max} panels.
+- If the source chapter contains many events, use more pages rather than compressing events.
+- NEVER reduce an entire long chapter to only a few pages unless the source text is genuinely short.
+- NEVER merge multiple major story beats into one single panel.
+- Every major narrative event must appear visually.
+- Every transition that matters emotionally or narratively must appear visually.
+- This is NOT a short recap.
+- For long chapters, prefer 15+ pages.
+- NEVER skip setup, reaction, explanation, training, transition or consequence.
+- If the result is below 10 pages for a long chapter, it is too compressed and must be expanded.
+
+MANDATORY PANEL RULES:
 - dialogue is REQUIRED in every panel.
 - Never return empty dialogue.
-- If a panel is purely visual, add a short narration line anyway.
-- Preserve all important dialogue beats from the story.
-- Do not summarize away key lines.
-- Do not skip emotional or story-important text.
-- Split long scenes into multiple panels if needed so the dialogue is not lost.
-- Each panel must contain one clear readable text beat.
-- narration panels must still contain meaningful text in "dialogue".
-- thought panels must still contain meaningful text in "dialogue".
-- speech panels must still contain meaningful text in "dialogue".
 - imagePrompt must describe ONLY what is visible.
 - characters must include only the characters that should appear in that panel.
-- sceneFocus="environment" for tower, city, world explanation, landscape, arena, sect architecture, temple, palace or place-focused panels.
-- sceneFocus="object_focus" for weapon, relic, portal, lights, altar, book or other important narrative object.
-- sceneFocus="single_character" when only one person should appear and the setting is secondary.
-- sceneFocus="character_in_environment" when a named or important character appears but the location, architecture or object must also be visible.
-- sceneFocus="two_characters" only when both characters are clearly part of the same moment.
-- sceneFocus="group_scene" when several disciples, sect members, a crowd or more than two figures matter.
-- panelKind="panoramic_top" for opening world panels or big environment moments.
-- panelKind="dialogue" for conversation scenes.
-- panelKind="emotional_closeup" for emotional face emphasis only when the place/object is not the main point.
-- panelKind="action" for attack, tension, motion, impact.
-- Keep dark xianxia / cultivator atmosphere when appropriate.
+- Every panel must include an animation object.
+- action panels should prefer frameHint="multi_5".
+- dialogue panels should prefer frameHint="multi_3" or "single".
+- environment panels should prefer camera="vertical_pan" or "slow_push".
+- ability or transformation scenes should prefer motion="burst".
+- combat scenes should prefer camera="impact_zoom" or "fast_zoom".
+- environment scenes should not feel like a static face close-up.
+- creature panels should visually prioritize the creature.
 - Keep visual continuity.
 - Every panel must advance story + text together.
-- viewAngle="back" only when the story explicitly needs the character seen from behind.
-- viewAngle="front" by default for character introduction or identity-important scenes.
-- viewAngle="profile" for side conversation shots.
-- When introducing an important character for the first time, prefer front view.
-- If Karol, Kelvin, Cristian, or Mefisto are mentioned in dialogue, prioritize them visually when appropriate.
-- If two tracked characters are mentioned in the same interaction, they should appear together.
-- Never invent a third person in a two-character panel.
-- Avoid unrelated objects and empty shots.
-- The imagePrompt must visually match the dialogue.
-- If the panel mentions a tower, the tower must be visible.
-- If the panel mentions an arena, the arena must be visible.
-- If the panel mentions a sect or temple, the sect architecture must be visible.
-- If the panel mentions an altar, the altar must be visible.
-- If the panel mentions a weapon, the weapon must be visible.
-- If the panel mentions lights, glowing particles or floating lights, they must be visible.
-- If the panel mentions an ability, power, aura, spell, transformation or attack, it must be visible.
-- If the panel mentions several people, the scene must not become a solo portrait.
-- Do not reduce environment scenes to only a big face close-up.
+
+ADAPTATION RULES:
+- Adapt the source chapter faithfully.
+- Break paragraphs into multiple sequential visual beats.
+- A scene with setup, reaction, action and consequence should usually become multiple panels.
+- Worldbuilding explanations should become visual sequences, not one compressed panel.
+- Training montages should use multiple panels if the text describes repeated effort or passage of time.
+- Tournament announcements, crowd reaction, rules explanation, key rivals, teleportation and arrival at a dangerous location should not be skipped.
+- If a new enemy or beast is revealed, give that reveal proper buildup.
+
+DIALOGUE PRESERVATION RULES:
+- Dialogue must NOT be overly shortened.
+- Keep important explanations complete.
+- Do not reduce narration to 3-5 words unless the scene truly demands brevity.
+- Preserve system messages, tournament rules, training narration and emotional lines.
+- Long dialogue can be split across multiple panels instead of being cut down.
 
 Platform storytelling rules:
 ${storyProfile.dialogueRule}
@@ -2628,26 +2994,34 @@ Continuity rules:
 - Do not contradict prior panels.
 
 Previous pages:
-${previousPages.length ? JSON.stringify(previousPages) : "None"}
+${previousPages.length ? JSON.stringify(previousPages).slice(0, 5000) : "[]"}
 
-Story:
+Story request:
 ${safePrompt}
 `;
-
     const scriptRes = await client.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       temperature: 0.2,
       messages: [{ role: "user", content: scriptPrompt }]
     });
 
-    const script = scriptRes.choices[0].message.content;
-    const storyboard = parseStoryboardJson(script);
+   const script = scriptRes.choices[0].message.content;
+let storyboard = parseStoryboardJson(script);
 
-    if (!storyboard?.pages || !Array.isArray(storyboard.pages)) {
-      throw new Error("El storyboard JSON no contiene un array válido en 'pages'.");
-    }
+storyboard = await expandStoryboardIfTooShort({
+  storyboard,
+  title,
+  safePrompt,
+  storyProfile,
+  previousPages,
+  openingHook
+});
 
-    const pages = storyboard.pages;
+if (!storyboard?.pages || !Array.isArray(storyboard.pages)) {
+  throw new Error("El storyboard JSON no contiene un array válido en 'pages'.");
+}
+
+const pages = storyboard.pages;
 
     for (const page of pages) {
       for (const panel of page.panels || []) {
@@ -3712,6 +4086,10 @@ ${abilityPromptBlock},
 cinematic scene
 `;
         }
+        panel.animation = {
+  ...getDefaultPanelAnimation(panel),
+  ...(panel.animation || {})
+};
 
         let imageResult;
         let payload;
@@ -3723,19 +4101,20 @@ cinematic scene
   sceneFocus === "creature_focus"
 ) {
           payload = {
-            prompt: finalPrompt,
-            seed: null,
-            styleSeed: panelSeed,
-            gender: null,
-            identityPrompt: "",
-            referenceImage: null,
-            characterCount: 0,
-            duoType: null,
-            abilityName: "",
-            abilityPrompt: "",
-            abilityColor: "",
-            abilityVfx: [],
-          };
+  prompt: finalPrompt,
+  seed: null,
+  styleSeed: panelSeed,
+  gender: null,
+  identityPrompt: "",
+  referenceImage: null,
+  characterCount: 0,
+  duoType: null,
+  abilityName: "",
+  abilityPrompt: "",
+  abilityColor: "",
+  abilityVfx: [],
+  animation: panel.animation || getDefaultPanelAnimation(panel)
+};
         } else {
           const charactersForPayload =
             sceneFocus === "two_characters"
@@ -3773,6 +4152,14 @@ cinematic scene
         );
 
         panel.imageUrl = imageUrl;
+panel.animation = payload.animation || panel.animation || getDefaultPanelAnimation(panel);
+panel.generatedFrames = Array.isArray(imageResult.frames) ? imageResult.frames : [];
+panel.renderMeta = {
+  steps: imageResult.steps,
+  guidance: imageResult.guidance,
+  lora_scale: imageResult.lora_scale,
+  motionUsed: panel.animation?.motion || "idle"
+};
         panelIndex++;
       }
     }

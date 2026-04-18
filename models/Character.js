@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-
 const CharacterSchema = new mongoose.Schema({
   name: String,
   mangaTitle: String,
@@ -21,9 +20,46 @@ const CharacterSchema = new mongoose.Schema({
 
   profileVersion: {
     type: Number,
-    default: 3
+    default: 10
+  },
+
+  abilityName: {
+    type: String,
+    default: ""
+  },
+
+  abilityPrompt: {
+    type: String,
+    default: ""
+  },
+
+  abilityColor: {
+    type: String,
+    default: ""
+  },
+
+  abilityVfx: {
+    type: [String],
+    default: () => []
+  },
+
+  combatStyle: {
+    type: String,
+    default: "balanced"
+  },
+
+  preferredShots: {
+    type: [String],
+    default: () => []
+  },
+
+  animationProfile: {
+    type: String,
+    default: "standard"
   }
 });
+
+CharacterSchema.set("minimize", false);
 
 CharacterSchema.index({ mangaTitle: 1, name: 1 }, { unique: true });
 

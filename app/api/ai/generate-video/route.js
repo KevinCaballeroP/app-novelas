@@ -167,6 +167,30 @@ function inferPanelMood(caption = "", imagePrompt = "") {
   return "dialogue";
 }
 
+function resolvePanelMood(panel = {}, fallback = "auto") {
+  const motion = String(panel?.animation?.motion || "").toLowerCase();
+
+  if (motion === "action" || motion === "burst") return "action";
+  if (motion === "environment_drift") return "environment";
+  if (motion === "tension") return "emotional";
+  if (motion === "dialogue") return "dialogue";
+
+  return fallback;
+}
+
+function applyCameraPreset(baseMood, camera = "auto") {
+  const c = String(camera || "auto").toLowerCase();
+
+  if (c === "impact_zoom") return "action";
+  if (c === "fast_zoom") return "action";
+  if (c === "vertical_pan") return "environment";
+  if (c === "side_pan") return "dialogue";
+  if (c === "orbit_feel") return "emotional";
+  if (c === "slow_push") return "dialogue";
+
+  return baseMood;
+}
+
 function getFormatProfile(format) {
   if (format === "youtube") {
     return {
@@ -248,8 +272,8 @@ function buildAnimationFilter({
   const isSlowBase = profile.zoomBase === "slow";
 
   let zoomExpr = isSlowBase
-    ? "min(zoom+0.00035,1.04)"
-    : "min(zoom+0.0008,1.08)";
+  ? "min(zoom+0.00020,1.025)"
+  : "min(zoom+0.00040,1.05)";
   let xExpr = "iw/2-(iw/zoom/2)";
   let yExpr = "ih/2-(ih/zoom/2)";
   let addShake = false;
@@ -269,29 +293,29 @@ function buildAnimationFilter({
     zoomExpr = isSlowBase
       ? "min(zoom+0.00032,1.04)"
       : "min(zoom+0.00075,1.08)";
-    xExpr =
-      panelIndex % 2 === 0
-        ? `iw/2-(iw/zoom/2)+on*${isSlowBase ? "0.08" : "0.15"}`
-        : `iw/2-(iw/zoom/2)-on*${isSlowBase ? "0.08" : "0.15"}`;
+   xExpr =
+    panelIndex % 2 === 0
+      ? `iw/2-(iw/zoom/2)+on*${isSlowBase ? "0.04" : "0.08"}`
+      : `iw/2-(iw/zoom/2)-on*${isSlowBase ? "0.04" : "0.08"}`;
     yExpr = "ih/2-(ih/zoom/2)";
   } else if (mood === "emotional") {
     zoomExpr = isSlowBase
-      ? "min(zoom+0.00045,1.06)"
-      : "min(zoom+0.00115,1.14)";
+      ? "min(zoom+0.00028,1.04)"
+      : "min(zoom+0.00055,1.08)";
     xExpr = "iw/2-(iw/zoom/2)";
     yExpr = isWide ? "ih/2-(ih/zoom/2)-4" : "ih/2-(ih/zoom/2)-6";
   } else if (mood === "action") {
     zoomExpr = isSlowBase
-      ? "min(zoom+0.0006,1.08)"
-      : "min(zoom+0.0015,1.16)";
+      ? "min(zoom+0.00045,1.06)"
+      : "min(zoom+0.00090,1.10)";
     xExpr = isWide
-      ? `iw/2-(iw/zoom/2)+sin(on/4.1)*7`
-      : `iw/2-(iw/zoom/2)+sin(on/2.6)*10`;
+      ? `iw/2-(iw/zoom/2)+sin(on/6.0)*4`
+      : `iw/2-(iw/zoom/2)+sin(on/4.2)*6`;
     yExpr = isWide
-      ? `ih/2-(ih/zoom/2)+sin(on/4.6)*4`
-      : `ih/2-(ih/zoom/2)+sin(on/3.1)*6`;
-    addShake = !isSlowBase;
-    addFlash = true;
+      ? `ih/2-(ih/zoom/2)+sin(on/6.8)*2`
+      : `ih/2-(ih/zoom/2)+sin(on/5.0)*3`;
+    addShake = !isSlowBase && duration > 1.2;
+    addFlash = duration > 1.0;
   }
 
   parts.push(
@@ -299,7 +323,7 @@ function buildAnimationFilter({
   );
 
   if (addShake) {
-    parts.push(`eq=brightness='if(lt(mod(t,0.12),0.06),0.015,0)'`);
+    parts.push(`eq=brightness='if(lt(mod(t,0.18),0.05),0.008,0)'`);
   }
 
   if (addFlash) {
@@ -517,7 +541,45 @@ function buildHookText(title, originalCaption, panelIndex) {
     return shorter;
   }
 
-  return caption.slice(0, 65).trim() + "...";
+  return `${caption.slice(0, 65).trim()}...`;
+}
+
+function createVideoFromFrameSequence(ffmpegPath, framePaths, outputPath, fps = 16) {
+  const listFile = path.join(path.dirname(outputPath), `frames_${Date.now()}.txt`);
+
+  fs.writeFileSync(
+    listFile,
+    framePaths.map((file) => `file '${file.replace(/\\/g, "/")}'`).join("\n"),
+    "utf8"
+  );
+
+  const result = spawnSync(
+    ffmpegPath,
+    [
+      "-y",
+      "-r", String(fps),
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listFile,
+      "-vf", `fps=${fps},format=yuv420p`,
+      "-c:v", "libx264",
+      "-preset", "medium",
+      "-pix_fmt", "yuv420p",
+      outputPath,
+    ],
+    {
+      encoding: "utf8",
+      shell: false,
+    }
+  );
+
+  if (result.error) {
+    throw new Error(`No se pudo crear video desde frames: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`ffmpeg falló creando clip desde frames: ${result.stderr || "sin stderr"}`);
+  }
 }
 
 async function buildSharedPanelAssets(tempDir, ffmpegPath, panelData, usePanelVoices) {
@@ -544,11 +606,11 @@ async function buildSharedPanelAssets(tempDir, ffmpegPath, panelData, usePanelVo
     }
 
     sharedPanels.push({
-      ...panel,
-      imagePath,
-      voicePath,
-      realAudioDuration,
-    });
+  ...panel,
+  imagePath,
+  voicePath,
+  realAudioDuration,
+});
   }
 
   return sharedPanels;
@@ -603,15 +665,54 @@ async function generateSingleFormatVideo({
       duration = Math.max(estimated, minPanelDuration);
     }
 
+    const panelDuration =
+      Number(panel.animation?.duration) > 0
+        ? Number(panel.animation.duration)
+        : duration;
+
+    const baseMood = resolvePanelMood(
+      panel,
+      animationStyle === "auto"
+        ? inferPanelMood(captionForVideo, panel.imagePrompt)
+        : animationStyle
+    );
+
+    const finalMood = applyCameraPreset(
+      baseMood,
+      panel.animation?.camera || "auto"
+    );
+
+    let sourceVisualPath = panel.imagePath;
+
+    if (Array.isArray(panel.generatedFrames) && panel.generatedFrames.length > 1) {
+      const frameDir = path.join(formatDir, `panel_${index}_frames`);
+      fs.mkdirSync(frameDir, { recursive: true });
+
+      const framePaths = [];
+
+      for (let f = 0; f < panel.generatedFrames.length; f++) {
+        const framePath = path.join(
+          frameDir,
+          `frame_${String(f).padStart(2, "0")}.png`
+        );
+        fs.writeFileSync(framePath, Buffer.from(panel.generatedFrames[f], "base64"));
+        framePaths.push(framePath);
+      }
+
+      const seqClipPath = path.join(frameDir, `sequence_${index}.mp4`);
+     createVideoFromFrameSequence(ffmpegPath, framePaths, seqClipPath, 16);
+      sourceVisualPath = seqClipPath;
+    }
+
     const { vfParts, mood } = buildAnimationFilter({
       width,
       height,
-      duration,
+      duration: panelDuration,
       fps,
-      style: animationStyle,
+      style: finalMood,
       caption: captionForVideo,
       imagePrompt: panel.imagePrompt,
-      panelIndex: index,
+      panelIndex: panel.panelIndex ?? index,
       format,
     });
 
@@ -630,27 +731,40 @@ async function generateSingleFormatVideo({
     }
 
     const vf = vfParts.join(",");
+    const isVideoSource = sourceVisualPath.toLowerCase().endsWith(".mp4");
 
-    const result = spawnSync(
-      ffmpegPath,
-      [
-        "-y",
-        "-loop", "1",
-        "-i", panel.imagePath,
-        "-vf", vf,
-        "-t", String(duration),
-        "-r", String(fps),
-        "-pix_fmt", "yuv420p",
-        "-c:v", "libx264",
-        "-preset", "medium",
-        "-an",
-        rawClipPath,
-      ],
-      {
-        encoding: "utf8",
-        shell: false,
-      }
-    );
+    const ffmpegArgs = isVideoSource
+      ? [
+          "-y",
+          "-stream_loop", "-1",
+          "-i", sourceVisualPath,
+          "-t", String(panelDuration),
+          "-vf", vf,
+          "-r", String(fps),
+          "-pix_fmt", "yuv420p",
+          "-c:v", "libx264",
+          "-preset", "medium",
+          "-an",
+          rawClipPath,
+        ]
+      : [
+          "-y",
+          "-loop", "1",
+          "-i", sourceVisualPath,
+          "-vf", vf,
+          "-t", String(panelDuration),
+          "-r", String(fps),
+          "-pix_fmt", "yuv420p",
+          "-c:v", "libx264",
+          "-preset", "medium",
+          "-an",
+          rawClipPath,
+        ];
+
+    const result = spawnSync(ffmpegPath, ffmpegArgs, {
+      encoding: "utf8",
+      shell: false,
+    });
 
     if (result.error) {
       throw new Error(
@@ -768,7 +882,7 @@ export async function POST(req) {
     for (const page of pages) {
       const panels = Array.isArray(page.panels) ? page.panels : [];
 
-      for (const panel of panels) {
+      for (const [i, panel] of panels.entries()) {
         const imageUrl = panel.image || panel.imageUrl || "";
         if (!imageUrl) continue;
 
@@ -776,9 +890,14 @@ export async function POST(req) {
 
         panelData.push({
           index: globalIndex,
+          globalIndex,
+          page: page.page,
+          panelIndex: i,
           imageUrl,
           caption: cleanText(panel.dialogue || ""),
           imagePrompt: cleanText(panel.imagePrompt || ""),
+          generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
+          animation: panel.animation || null,
         });
       }
     }
