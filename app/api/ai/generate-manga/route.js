@@ -77,6 +77,64 @@ const CHARACTER_NAME_ALIASES = {
   yack: "Yack",
   "yack parces": "Yack"
 };
+const SECT_VISUALS = {
+  "dragón carmesí": {
+    canonical: "Dragón Carmesí",
+    symbol: "crimson dragon emblem",
+    colors: "crimson red, black, gold",
+    banner: "long war banner with crimson dragon sigil",
+    aura: "burning red spiritual aura"
+  },
+  "dragon carmesi": {
+    canonical: "Dragón Carmesí",
+    symbol: "crimson dragon emblem",
+    colors: "crimson red, black, gold",
+    banner: "long war banner with crimson dragon sigil",
+    aura: "burning red spiritual aura"
+  },
+  "loto blanco": {
+    canonical: "Loto Blanco",
+    symbol: "white lotus emblem",
+    colors: "white, silver, pale blue",
+    banner: "elegant sect banner with white lotus sigil",
+    aura: "pure white spiritual glow"
+  },
+  "sombra del alba": {
+    canonical: "Sombra del Alba",
+    symbol: "shadow dawn emblem",
+    colors: "dark violet, black, orange dawn glow",
+    banner: "dark sect banner with dawn-shadow sigil",
+    aura: "shadow aura mixed with sunrise light"
+  },
+  "viento cortante": {
+    canonical: "Viento Cortante",
+    symbol: "cutting wind emblem",
+    colors: "emerald green, silver, pale cyan",
+    banner: "sect flag with sharp wind sigil",
+    aura: "spiraling wind energy"
+  },
+  "filo del oeste": {
+    canonical: "Filo del Oeste",
+    symbol: "western blade emblem",
+    colors: "steel gray, dark blue, silver",
+    banner: "battle-worn sect banner with sword sigil",
+    aura: "cold blade aura"
+  },
+  "montaña de hierro": {
+    canonical: "Montaña de Hierro",
+    symbol: "iron mountain emblem",
+    colors: "iron gray, bronze, dark brown",
+    banner: "heavy iron sect standard with mountain sigil",
+    aura: "dense metallic spiritual pressure"
+  },
+  "corazón eterno": {
+    canonical: "Corazón Eterno",
+    symbol: "eternal heart emblem",
+    colors: "gold, deep red, white",
+    banner: "sacred sect banner with eternal heart sigil",
+    aura: "radiant eternal energy"
+  }
+};
 const BANNED_GENERIC_CHARACTER_NAMES = [
   "Gente",
   "Persona",
@@ -729,6 +787,66 @@ function buildObjectDetails(text = "") {
   }
 
   return parts.join(", ");
+}
+function detectSectMentions(text = "") {
+  const t = String(text || "").toLowerCase();
+  const found = [];
+
+  for (const key of Object.keys(SECT_VISUALS)) {
+    if (t.includes(key)) {
+      found.push(SECT_VISUALS[key]);
+    }
+  }
+
+  const unique = [];
+  const seen = new Set();
+
+  for (const item of found) {
+    if (!item?.canonical) continue;
+    const k = item.canonical.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    unique.push(item);
+  }
+
+  return unique;
+}
+function hasSectBannerFocus(text = "") {
+  const t = String(text || "").toLowerCase();
+  const sects = detectSectMentions(t);
+
+  if (sects.length >= 1) return true;
+
+  return (
+    t.includes("secta") ||
+    t.includes("sectas") ||
+    t.includes("sect") ||
+    t.includes("banner") ||
+    t.includes("bandera") ||
+    t.includes("estandarte") ||
+    t.includes("emblema") ||
+    t.includes("simbolo") ||
+    t.includes("símbolo") ||
+    t.includes("insignia") ||
+    t.includes("sigil")
+  );
+}
+
+function buildSectBannerDetails(text = "") {
+  const sects = detectSectMentions(text);
+  if (!sects.length) return "";
+
+  return sects.map((sect) => `
+sect name: ${sect.canonical},
+main symbol: ${sect.symbol},
+main colors: ${sect.colors},
+banner type: ${sect.banner},
+energy style: ${sect.aura},
+show a ceremonial sect flag, emblem, sigil or standard,
+the symbol must be readable,
+the design must feel iconic and recognizable,
+ancient eastern fantasy sect identity
+  `.trim()).join("\n");
 }
 
 function buildCrowdSupportPrompt(text = "") {
@@ -3066,6 +3184,19 @@ const pages = storyboard.pages;
   const creatureDetails = buildCreatureDetails(combinedPanelText);
   const hasCreatures = detectCreatureKeywords(combinedPanelText).length > 0;
 
+  const sectBannerBlock = hasSectBannerFocus(combinedPanelText)
+  ? `
+SECT BANNER VISUAL RULES:
+show the sect as a banner, flag, sigil, emblem, crest or ceremonial standard,
+do not default to a random character portrait,
+the sect identity must be represented visually through symbols,
+the symbol must be readable and iconic,
+if multiple sects are mentioned, show multiple banners or emblems in the scene,
+prioritize heraldry, insignias, ritual standards and symbolic identity,
+${buildSectBannerDetails(combinedPanelText)}
+`
+  : "";
+
   const abilityPromptBlock = hasAbility
     ? `
 ABILITY VISUAL RULES:
@@ -3138,7 +3269,9 @@ const combinedSceneText = `${visualText} ${dialogueText}`;
 
 const environmentDominant = isEnvironmentDominantScene(combinedSceneText);
 const creatureDominant = isCreatureDominantScene(combinedSceneText);
-const objectDominant = isObjectDominantScene(combinedSceneText);
+const objectDominant =
+  isObjectDominantScene(combinedSceneText) ||
+  hasSectBannerFocus(combinedSceneText);
 
 // PRIORIDAD REAL
 if (creatureDominant) {
@@ -3349,6 +3482,7 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+${sectBannerBlock}
 ${creaturePromptBlock}
 
 ${abilityPromptBlock}
@@ -3378,15 +3512,16 @@ if the story mentions lights, they must be visible,
 if the story mentions a weapon or altar, it must be visible
 `;
         } else if (sceneFocus === "object_focus") {
-          const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
-          const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
+  const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
+  const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`);
 
-          finalPrompt = `
+  finalPrompt = `
 object-focused narrative panel,
 important object must dominate the frame,
 no unnecessary face close-up,
 show the relevant item clearly,
 show surrounding setting if needed,
+if a sect is mentioned, prioritize banner, sigil, emblem, crest or ceremonial flag,
 
 ${stylePreset},
 
@@ -3401,6 +3536,8 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+
+${sectBannerBlock}
 
 ${abilityPromptBlock}
 
@@ -3418,7 +3555,8 @@ high detail prop rendering,
 clear narrative emphasis,
 if the story mentions a weapon, the weapon must be visible,
 if the story mentions lights, the lights must be visible,
-if the story mentions an artifact, altar, scroll or portal, it must be visible
+if the story mentions an artifact, altar, scroll or portal, it must be visible,
+if the story mentions a sect, the sect must be represented as a flag, emblem, sigil, crest or standard
 `;
 } else if (sceneFocus === "creature_focus") {
   const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`);
