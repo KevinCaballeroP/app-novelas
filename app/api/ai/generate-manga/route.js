@@ -25,6 +25,8 @@ const LOCKED_CHARACTER_NAMES = [
   "Kelvin",
   "Mefisto",
   "Siete",
+  "Shane",
+"Shane Han",
   "Amanecer",
   "Mapa"
 ];
@@ -46,7 +48,10 @@ const DETECTABLE_CHARACTER_NAMES = [
   "Camilo Ricón",
   "Lex Stoll",
   "Jairo Velásquez",
-  "Yack Parces"
+  "Yack Parces",
+    "Shane",
+  "Shane Han",
+  "Lin Kanc",
 ];
 
 const CHARACTER_NAME_ALIASES = {
@@ -75,7 +80,11 @@ const CHARACTER_NAME_ALIASES = {
   "jairo velásquez": "Jairo",
 
   yack: "Yack",
-  "yack parces": "Yack"
+  "yack parces": "Yack",
+    shane: "Shane",
+  "shane han": "Shane",
+  lin: "Lin Kanc",
+  "lin kanc": "Lin Kanc",
 };
 const SECT_VISUALS = {
   "dragón carmesí": {
@@ -579,6 +588,7 @@ function detectObjectKeywords(text = "") {
     { key: "book", words: ["book", "libro", "manual", "scroll", "pergamino"] },
     { key: "chain", words: ["chain", "cadena", "chains", "cadenas"] },
     { key: "crystal", words: ["crystal", "cristal", "gem", "gema"] },
+        { key: "lotus", words: ["loto", "loto carmesi", "loto carmesí", "loto del deseo", "flor de loto", "flor de loto carmesi", "flor de loto carmesí"] },
   ];
 
   return map
@@ -785,6 +795,9 @@ function buildObjectDetails(text = "") {
   if (objs.includes("crystal")) {
     parts.push("glowing crystal, luminous gem core, magical refraction");
   }
+  if (objs.includes("lotus")) {
+    parts.push("sacred mystical lotus flower, glowing crimson lotus petals, spiritual flower bloom, luminous floral core, magical blossom, real flower shape clearly visible");
+  }
 
   return parts.join(", ");
 }
@@ -821,14 +834,24 @@ function hasSectBannerFocus(text = "") {
     t.includes("secta") ||
     t.includes("sectas") ||
     t.includes("sect") ||
+    t.includes("facción") ||
+    t.includes("faccion") ||
+    t.includes("clan") ||
     t.includes("banner") ||
     t.includes("bandera") ||
+    t.includes("banderas") ||
     t.includes("estandarte") ||
+    t.includes("estandartes") ||
     t.includes("emblema") ||
+    t.includes("emblemas") ||
     t.includes("simbolo") ||
     t.includes("símbolo") ||
+    t.includes("simbolos") ||
+    t.includes("símbolos") ||
     t.includes("insignia") ||
-    t.includes("sigil")
+    t.includes("insignias") ||
+    t.includes("sigil") ||
+    t.includes("crest")
   );
 }
 
@@ -1982,7 +2005,7 @@ recognizable male silhouette
        $set: {
   identityPrompt,
   seed,
-  gender: "male",
+gender: "male",
   visualStylePreset: stylePreset,
   profileVersion: CURRENT_PROFILE_VERSION,
   lockIdentity: isLockedCharacterName(cleanName),
@@ -2001,6 +2024,150 @@ recognizable male silhouette
   preferredShots: existingCharacter?.preferredShots?.length ? existingCharacter.preferredShots : [],
   animationProfile: existingCharacter?.animationProfile || "standard",
 },
+        $setOnInsert: {
+          name: cleanName,
+          referenceImage: null,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+  }
+
+    if (lowerName === "shane" || lowerName === "shane han") {
+    const identityPrompt = `
+(1woman:1.6),
+solo,
+adult woman,
+Shane Han,
+elegant but deadly,
+long dark hair,
+pale skin like moonlight,
+cold light blue eyes,
+sharp feminine face,
+slim but strong feminine body,
+graceful posture,
+dark assassin robes,
+subtle red dragon emblems,
+cold aura,
+composed expression,
+no male traits,
+no masculine face,
+same exact face,
+same exact hairstyle,
+same exact eye color,
+same exact character,
+recognizable feminine silhouette,
+dark fantasy cultivator aesthetic,
+fully dressed
+`;
+
+    return await Character.findOneAndUpdate(
+      {
+        mangaTitle,
+        name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
+      },
+      {
+        $set: {
+          identityPrompt,
+          seed,
+          gender: "female",
+          visualStylePreset: stylePreset,
+          profileVersion: CURRENT_PROFILE_VERSION,
+          lockIdentity: isLockedCharacterName(cleanName),
+
+          cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+          evolutionStage: existingCharacter?.evolutionStage || 1,
+
+          abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+          abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+          abilityElements: existingCharacter?.abilityElements?.length
+            ? existingCharacter.abilityElements
+            : defaultAbility.abilityElements,
+          abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+          abilityVfx: existingCharacter?.abilityVfx?.length
+            ? existingCharacter.abilityVfx
+            : defaultAbility.abilityVfx,
+
+          combatStyle: existingCharacter?.combatStyle || "balanced",
+          preferredShots: existingCharacter?.preferredShots?.length
+            ? existingCharacter.preferredShots
+            : [],
+          animationProfile: existingCharacter?.animationProfile || "standard",
+        },
+        $setOnInsert: {
+           name: "Shane",
+          referenceImage: null,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+      }
+    );
+  }
+  if (lowerName === "lin kanc" || lowerName === "lin") {
+    const identityPrompt = `
+(1man:1.8),
+solo,
+adult man,
+Lin Kanc,
+cold dominant male cultivator,
+dark hair,
+crimson eyes,
+sharp masculine face,
+strong jawline,
+broad shoulders,
+slim masculine body,
+oppressive aura,
+dark cultivator robes,
+red dragon details,
+no female traits,
+no feminine face,
+same exact face,
+same exact hairstyle,
+same exact eye color,
+same exact character,
+recognizable male silhouette,
+dark fantasy cultivator aesthetic,
+fully dressed
+`;
+
+    return await Character.findOneAndUpdate(
+      {
+        mangaTitle,
+        name: { $regex: `^${escapeRegex(cleanName)}$`, $options: "i" },
+      },
+      {
+        $set: {
+          identityPrompt,
+          seed,
+          gender: "male",
+          visualStylePreset: stylePreset,
+          profileVersion: CURRENT_PROFILE_VERSION,
+          lockIdentity: isLockedCharacterName(cleanName),
+
+          cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+          evolutionStage: existingCharacter?.evolutionStage || 1,
+
+          abilityName: existingCharacter?.abilityName || defaultAbility.abilityName,
+          abilityPrompt: existingCharacter?.abilityPrompt || defaultAbility.abilityPrompt,
+          abilityElements: existingCharacter?.abilityElements?.length
+            ? existingCharacter.abilityElements
+            : defaultAbility.abilityElements,
+          abilityColor: existingCharacter?.abilityColor || defaultAbility.abilityColor,
+          abilityVfx: existingCharacter?.abilityVfx?.length
+            ? existingCharacter.abilityVfx
+            : defaultAbility.abilityVfx,
+
+          combatStyle: existingCharacter?.combatStyle || "balanced",
+          preferredShots: existingCharacter?.preferredShots?.length
+            ? existingCharacter.preferredShots
+            : [],
+          animationProfile: existingCharacter?.animationProfile || "standard",
+        },
         $setOnInsert: {
           name: cleanName,
           referenceImage: null,
@@ -2416,12 +2583,20 @@ function prioritizeStoryCharacters(names = [], dialogueText = "", visualText = "
 function isStrongTwoCharacterScene(dialogueText = "", visualText = "") {
   const text = `${dialogueText} ${visualText}`.toLowerCase();
 
-  const hasKarol = text.includes("karol");
-  const hasCristian = text.includes("cristian");
-  const hasKelvin = text.includes("kelvin");
-  const hasMefisto = text.includes("mefisto");
+  const trackedNames = [
+    "karol",
+    "cristian",
+    "kelvin",
+    "mefisto",
+    "shane",
+    "shane han",
+    "lin kanc",
+    "natalia",
+    "camilo",
+    "lex"
+  ];
 
-  const pairCount = [hasKarol, hasCristian, hasKelvin, hasMefisto].filter(Boolean).length;
+  const pairCount = trackedNames.filter((name) => text.includes(name)).length;
 
   if (pairCount < 2) return false;
 
@@ -2431,12 +2606,19 @@ function isStrongTwoCharacterScene(dialogueText = "", visualText = "") {
     text.includes(" con ") ||
     text.includes(" conoció a ") ||
     text.includes(" habló con ") ||
+    text.includes(" hablo con ") ||
     text.includes(" miró a ") ||
+    text.includes(" miro a ") ||
     text.includes(" frente a ") ||
     text.includes(" acompañada de ") ||
     text.includes(" acompañado de ") ||
-    text.includes(" recordó a ") ||
-    text.includes(" corazón de ")
+    text.includes(" pelear ") ||
+    text.includes(" luchar ") ||
+    text.includes(" lucharon juntos ") ||
+    text.includes(" fight ") ||
+    text.includes(" together ") ||
+    text.includes(" duo ") ||
+    text.includes(" juntos ")
   );
 }
 
@@ -3079,6 +3261,9 @@ MANDATORY PANEL RULES:
 - Every panel must advance story + text together.
 
 ADAPTATION RULES:
+- If several sects are introduced, prefer visualizing them through banners, emblems, sigils, ceremonial flags or floating symbols.
+- Do not default to a human representative when sect identity can be shown symbolically.
+- Sect introductions should prioritize heraldry, insignias and faction symbols over portraits.
 - Adapt the source chapter faithfully.
 - Break paragraphs into multiple sequential visual beats.
 - A scene with setup, reaction, action and consequence should usually become multiple panels.
@@ -3519,9 +3704,15 @@ if the story mentions a weapon or altar, it must be visible
 object-focused narrative panel,
 important object must dominate the frame,
 no unnecessary face close-up,
+no human portrait,
+no character as main focus,
 show the relevant item clearly,
 show surrounding setting if needed,
 if a sect is mentioned, prioritize banner, sigil, emblem, crest or ceremonial flag,
+if multiple sects are mentioned, show multiple banners or floating emblems,
+no random elegant woman,
+no random cultivator portrait,
+symbolic faction identity only,
 
 ${stylePreset},
 
@@ -3536,6 +3727,21 @@ ${envDetails}
 
 OBJECT DETAILS:
 ${objDetails}
+
+${combinedPanelText.toLowerCase().includes("loto")
+  ? `
+LOTUS SCENE RULES:
+sacred spiritual lotus,
+mystical flower energy,
+no romance,
+no sensual pose,
+no erotic interpretation,
+spiritual energy phenomenon,
+overwhelming aura effect,
+hallucinatory mystical atmosphere,
+the lotus is the focus, not intimacy
+`
+  : ""}
 
 ${sectBannerBlock}
 
@@ -4406,6 +4612,7 @@ function detectSceneType(imagePrompt) {
   const envs = detectEnvironmentKeywords(t);
   const objs = detectObjectKeywords(t);
   const creatures = detectCreatureKeywords(t);
+  const sectSymbolic = hasSectBannerFocus(t);
 
   if (detectGroupScene(t)) return "group_scene";
 
@@ -4425,6 +4632,29 @@ function detectSceneType(imagePrompt) {
 
   if (creatures.length) return "group_scene";
 
+// 🔥 PRIORIDAD: grupo encapuchado con identidad de secta
+if (
+  sectSymbolic &&
+  (
+   t.includes("grupo") ||
+      t.includes("encapuch") ||
+      t.includes("túnica") ||
+      t.includes("tunica") ||
+      t.includes("miembros") ||
+      t.includes("vestía") ||
+      t.includes("vestian") ||
+      t.includes("vestían") ||
+      t.includes("sombras") ||
+      t.includes("sombra de dragón") ||
+      t.includes("sombra de dragon")
+  )
+) {
+  return "group_scene";
+}
+
+// símbolo puro (sin personas)
+if (sectSymbolic) return "object_focus";
+
   if (
     envs.length &&
     (
@@ -4439,10 +4669,20 @@ function detectSceneType(imagePrompt) {
     return "character_in_environment";
   }
 
-  if (envs.length) return "environment";
   if (objs.length) return "object_focus";
+  if (envs.length) return "environment";
 
-  if (detectAbilityKeywords(t) && (t.includes("man") || t.includes("woman") || t.includes("character") || t.includes("cultivator") || t.includes("girl") || t.includes("boy"))) {
+  if (
+    detectAbilityKeywords(t) &&
+    (
+      t.includes("man") ||
+      t.includes("woman") ||
+      t.includes("character") ||
+      t.includes("cultivator") ||
+      t.includes("girl") ||
+      t.includes("boy")
+    )
+  ) {
     return "single_character";
   }
 
