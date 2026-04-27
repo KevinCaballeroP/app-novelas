@@ -7,7 +7,9 @@ import "@/style/MangaReader.css";
 export default function MangaReader() {
   const { id } = useParams();
   const router = useRouter();
+
   const [manga, setManga] = useState(null);
+  const [openChapter, setOpenChapter] = useState(null);
 
   useEffect(() => {
     if (!id) return;
@@ -23,7 +25,6 @@ export default function MangaReader() {
   const chapters = useMemo(() => {
     if (!manga) return [];
 
-    // formato nuevo
     if (Array.isArray(manga.chapters) && manga.chapters.length > 0) {
       return manga.chapters.map((chapter, chapterIndex) => ({
         chapterNumber: chapter.chapterNumber || chapterIndex + 1,
@@ -40,7 +41,6 @@ export default function MangaReader() {
       }));
     }
 
-    // compatibilidad vieja
     if (Array.isArray(manga.pages) && manga.pages.length > 0) {
       return [
         {
@@ -61,6 +61,18 @@ export default function MangaReader() {
 
     return [];
   }, [manga]);
+
+  useEffect(() => {
+    if (chapters.length > 0 && openChapter === null) {
+      setOpenChapter(chapters[0].chapterNumber);
+    }
+  }, [chapters, openChapter]);
+
+  const toggleChapter = (chapterNumber) => {
+    setOpenChapter((current) =>
+      current === chapterNumber ? null : chapterNumber
+    );
+  };
 
   if (!manga) return <div className="loading">Cargando manga...</div>;
 
@@ -85,42 +97,64 @@ export default function MangaReader() {
           </p>
         )}
 
-        {chapters.map((chapter) => (
-          <div key={chapter.chapterNumber} className="manga-chapter-block">
-            <h2 className="chapter-title">
-              {chapter.title || `Capítulo ${chapter.chapterNumber}`}
-            </h2>
+        {chapters.map((chapter) => {
+          const isOpen = openChapter === chapter.chapterNumber;
 
-            {chapter.pages.map((page) => (
-              <div key={`${chapter.chapterNumber}-${page.pageNumber}`} className="manga-page">
-                <h3 className="page-number">Página {page.pageNumber}</h3>
+          return (
+            <div key={chapter.chapterNumber} className="manga-chapter-block">
+              <button
+                type="button"
+                className={`chapter-accordion-btn ${isOpen ? "open" : ""}`}
+                onClick={() => toggleChapter(chapter.chapterNumber)}
+              >
+                <span>
+                  {chapter.title || `Capítulo ${chapter.chapterNumber}`}
+                </span>
 
-                {page.panels.map((panel, i) => (
-                  <div
-                    key={`${chapter.chapterNumber}-${page.pageNumber}-${i}`}
-                    className="manga-panel"
-                  >
-                    <div className="panel-image-wrapper">
-                      {panel.imageUrl && (
-                        <img
-                          src={panel.imageUrl}
-                          className="panel-img"
-                          alt="Panel manga"
-                        />
-                      )}
+                <span className="chapter-meta">
+                  {chapter.pages.length} páginas {isOpen ? "▲" : "▼"}
+                </span>
+              </button>
 
-                      {panel.dialogue && (
-                        <div className={`speech-bubble pos-${i % 3}`}>
-                          {panel.dialogue}
+              {isOpen && (
+                <div className="chapter-content">
+                  {chapter.pages.map((page) => (
+                    <div
+                      key={`${chapter.chapterNumber}-${page.pageNumber}`}
+                      className="manga-page"
+                    >
+                      <h3 className="page-number">Página {page.pageNumber}</h3>
+
+                      {page.panels.map((panel, i) => (
+                        <div
+                          key={`${chapter.chapterNumber}-${page.pageNumber}-${i}`}
+                          className="manga-panel"
+                        >
+                          <div className="panel-image-wrapper">
+                            {panel.imageUrl && (
+                              <img
+                                src={panel.imageUrl}
+                                className="panel-img"
+                                alt={`Capítulo ${chapter.chapterNumber} página ${page.pageNumber}`}
+                                loading="lazy"
+                              />
+                            )}
+
+                            {panel.dialogue && (
+                              <div className={`speech-bubble pos-${i % 3}`}>
+                                {panel.dialogue}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
+                      ))}
                     </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        ))}
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -28,7 +28,8 @@ const LOCKED_CHARACTER_NAMES = [
   "Shane",
 "Shane Han",
   "Amanecer",
-  "Mapa"
+  "Mapa",
+  "Lian Han",
 ];
 
 const DETECTABLE_CHARACTER_NAMES = [
@@ -52,6 +53,7 @@ const DETECTABLE_CHARACTER_NAMES = [
     "Shane",
   "Shane Han",
   "Lin Kanc",
+   "Lian Han",
 ];
 
 const CHARACTER_NAME_ALIASES = {
@@ -85,6 +87,10 @@ const CHARACTER_NAME_ALIASES = {
   "shane han": "Shane",
   lin: "Lin Kanc",
   "lin kanc": "Lin Kanc",
+  lian: "Lian Han",
+"lian han": "Lian Han",
+"maestra lian": "Lian Han",
+"maestra lian han": "Lian Han",
 };
 const SECT_VISUALS = {
   "dragón carmesí": {
@@ -2179,6 +2185,82 @@ fully dressed
       }
     );
   }
+  if (lowerName === "lian" || lowerName === "lian han" || lowerName === "maestra lian" || lowerName === "maestra lian han") {
+  const identityPrompt = `
+(1woman:1.7),
+solo,
+adult woman,
+Lian Han,
+strict female master,
+dark blue cultivator robe,
+deep navy blue robe only,
+long dark hair,
+cold elegant eyes,
+cold authoritative gaze,
+calm but intimidating expression,
+refined mature feminine face,
+slim graceful body,
+powerful master presence,
+thunder-like aura,
+electric spiritual energy,
+wind moving her robe,
+sect elder aesthetic,
+fully dressed,
+no revealing outfit,
+no sexualized clothing,
+no male traits,
+no masculine face,
+same exact face,
+same exact hairstyle,
+same exact robe color,
+same exact character,
+recognizable female sect master,
+dark fantasy cultivator aesthetic
+`;
+
+  return await Character.findOneAndUpdate(
+    {
+      mangaTitle,
+      name: { $regex: `^${escapeRegex("Lian Han")}$`, $options: "i" },
+    },
+    {
+      $set: {
+        identityPrompt,
+        seed: generateCharacterSeed("Lian Han"),
+        gender: "female",
+        visualStylePreset: stylePreset,
+        profileVersion: CURRENT_PROFILE_VERSION,
+        lockIdentity: true,
+
+        cultivationLevel: existingCharacter?.cultivationLevel || "D3",
+        evolutionStage: existingCharacter?.evolutionStage || 1,
+
+        abilityName: existingCharacter?.abilityName || "Autoridad del Trueno",
+        abilityPrompt: existingCharacter?.abilityPrompt || "cold thunder aura, blue electric spiritual pressure, master-level lightning presence",
+        abilityElements: existingCharacter?.abilityElements?.length ? existingCharacter.abilityElements : ["lightning", "aura", "master"],
+        abilityColor: existingCharacter?.abilityColor || "deep blue",
+        abilityVfx: existingCharacter?.abilityVfx?.length ? existingCharacter.abilityVfx : [
+          "blue lightning aura",
+          "spiritual wind",
+          "electric particles",
+          "master pressure"
+        ],
+
+        combatStyle: existingCharacter?.combatStyle || "master",
+        preferredShots: existingCharacter?.preferredShots?.length ? existingCharacter.preferredShots : ["medium shot", "authority pose", "wide sect shot"],
+        animationProfile: existingCharacter?.animationProfile || "master_presence",
+      },
+      $setOnInsert: {
+        name: "Lian Han",
+        referenceImage: null,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+}
 
   const res = await client.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -2638,12 +2720,25 @@ function inferSceneFocusFromNames(panelCharacters = [], visualText = "", dialogu
   return null;
 }
 
-async function uploadMangaImage(base64, page, panel) {
+function slugify(text = "") {
+  return String(text)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+async function uploadMangaImage(base64, mangaTitle, chapterNumber, page, panel) {
+  const safeTitle = slugify(mangaTitle);
+  const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
   const upload = await cloudinary.uploader.upload(
     `data:image/png;base64,${base64}`,
     {
-      folder: "mangas",
-      public_id: `page_${page}_panel_${panel}`,
+      folder: `mangas/${safeTitle}/chapter_${chapterNumber}`,
+      public_id: `page_${page}_panel_${panel}_${uniqueId}`,
+      overwrite: false,
     }
   );
 
@@ -2936,8 +3031,8 @@ function getStoryProfile(contentProfile = "manga_long") {
 `,
     storyboardFormat: "long-form dark seinen manga storyboard",
     defaultPanelTag: "vertical manga panel",
-    targetPages: { min: 12, max: 22 },
-    panelsPerPage: { min: 3, max: 5 }
+    targetPages: { min: 18, max: 28 },
+    panelsPerPage: { min: 4, max: 5 }
   };
 }
 
@@ -2977,6 +3072,30 @@ function countStoryboardPanels(storyboard) {
     const panels = Array.isArray(page?.panels) ? page.panels.length : 0;
     return acc + panels;
   }, 0);
+}
+
+function storyboardCoversEnding(storyboard, originalPrompt = "") {
+  const story = String(originalPrompt || "").toLowerCase();
+
+  if (!story.includes("shane") && !story.includes("doble shi")) {
+    return true;
+  }
+
+  const allText = (storyboard?.pages || [])
+    .flatMap((page) => page.panels || [])
+    .map((panel) => `${panel.dialogue || ""} ${panel.imagePrompt || ""}`)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    allText.includes("shane") &&
+    allText.includes("doble shi") &&
+    (
+      allText.includes("vínculo") ||
+      allText.includes("vinculo") ||
+      allText.includes("destino")
+    )
+  );
 }
 
 function estimateStoryboardTargets(prompt = "", storyProfile = {}) {
@@ -3038,21 +3157,35 @@ async function expandStoryboardIfTooShort({
   openingHook
 }) {
   const targets = estimateStoryboardTargets(safePrompt, storyProfile);
-  const currentPages = Array.isArray(storyboard?.pages) ? storyboard.pages.length : 0;
-  const currentPanels = countStoryboardPanels(storyboard);
 
-  const needsExpansion =
-  currentPages < targets.targetPages ||
-  currentPanels < Math.ceil(targets.minPanels * 1.15);
+  let currentStoryboard = storyboard;
+  let attempts = 0;
+  const maxAttempts = 4;
 
-  if (!needsExpansion) {
-    return storyboard;
-  }
+  while (attempts < maxAttempts) {
+    const currentPages = Array.isArray(currentStoryboard?.pages)
+      ? currentStoryboard.pages.length
+      : 0;
 
-  const expandPrompt = `
-Expand this manga storyboard because it is too compressed.
+    const currentPanels = countStoryboardPanels(currentStoryboard);
 
-Return ONLY valid JSON in this exact structure:
+    const needsExpansion =
+      currentPages < targets.targetPages ||
+      currentPanels < targets.minPanels ||
+      !storyboardCoversEnding(currentStoryboard, safePrompt);
+
+    if (!needsExpansion) {
+      return currentStoryboard;
+    }
+
+    console.warn(
+      `⚠️ Expansión ${attempts + 1}: páginas=${currentPages}, paneles=${currentPanels}, objetivo=${targets.targetPages} páginas / ${targets.minPanels} paneles`
+    );
+
+    const expandPrompt = `
+Expand this manga storyboard because it is too compressed or does not include the ending.
+
+Return ONLY valid JSON with this exact structure:
 
 {
   "pages":[
@@ -3081,82 +3214,43 @@ Return ONLY valid JSON in this exact structure:
   ]
 }
 
-MANDATORY EXPANSION RULES:
+MANDATORY RULES:
 - This is LONG-FORM manga, not a recap.
-- Expand the story into approximately ${targets.targetPages} pages.
 - Minimum pages required: ${targets.minPages}
+- Target pages: ${targets.targetPages}
+- Maximum pages: ${targets.maxPages}
 - Minimum total panels required: ${targets.minPanels}
 - Prefer ${targets.minPanelsPerPage} to ${targets.maxPanelsPerPage} panels per page.
 - Do NOT summarize multiple major events into one panel.
+- Do NOT stop in the middle of the chapter.
+- The ending MUST be included.
+- The final panels MUST adapt the final paragraph of the source text.
+- Preserve training, mission, combat, rewards, alchemy, meditation, Shane connection and final Doble Shi narration if present.
 - Every important paragraph or event must become its own visual sequence.
 - Include setup, reaction, atmosphere, transition and consequence.
-- Preserve all important locations, explanations, reveals, training beats, tournament setup, named characters and monster teasers.
-- If the chapter includes city intro, library, training, tournament, rules, competitors, teleportation, jungle arrival and beast reveal, each must appear in separate sequences.
-- Maintain narrative continuity and emotional progression.
 - Keep the first panel strong using this hook idea: "${openingHook}"
-- This is NOT a short-form summary.
-- Do NOT compress the chapter.
-- For long chapters, prefer 15 to 22 pages.
-- Never collapse city introduction, training, item acquisition, tournament rules, rival introductions, teleportation, arrival and monster reveal into a few panels.
-- Every major paragraph should become its own visual beat or sequence.
 
 Previous pages continuity:
 ${previousPages.length ? JSON.stringify(previousPages).slice(0, 5000) : "[]"}
 
-Original story request:
+Original full story:
 ${safePrompt}
 
-Compressed storyboard to expand:
-${JSON.stringify(storyboard).slice(0, 18000)}
+Current incomplete storyboard:
+${JSON.stringify(currentStoryboard).slice(0, 22000)}
 `;
 
-  const expandRes = await client.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    temperature: 0.2,
-    messages: [{ role: "user", content: expandPrompt }]
-  });
+    const expandRes = await client.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.2,
+      messages: [{ role: "user", content: expandPrompt }]
+    });
 
-  const expanded = parseStoryboardJson(expandRes.choices[0].message.content);
-const expandedPages = Array.isArray(expanded?.pages) ? expanded.pages.length : 0;
-const expandedPanels = countStoryboardPanels(expanded);
+    currentStoryboard = parseStoryboardJson(expandRes.choices[0].message.content);
+    attempts++;
+  }
 
-if (
-  expandedPages < targets.minPages ||
-  expandedPanels < targets.minPanels
-) {
-  console.warn("⚠️ Segunda expansión forzada por storyboard aún corto...");
-
-  const secondExpandPrompt = `
-Expand this storyboard AGAIN because it is still too compressed.
-
-Return ONLY valid JSON.
-
-Rules:
-- Minimum pages: ${targets.minPages}
-- Preferred pages: ${targets.targetPages} to ${targets.maxPages}
-- Minimum panels: ${targets.minPanels}
-- Prefer ${targets.minPanelsPerPage} to ${targets.maxPanelsPerPage} panels per page
-- Do NOT summarize
-- Do NOT skip narrative beats
-- Expand training, explanations, reactions, environment reveals, tournament rules, rival intros, teleportation and monster reveal
-
-Original story:
-${safePrompt}
-
-Compressed storyboard:
-${JSON.stringify(expanded).slice(0, 18000)}
-`;
-
-  const secondExpandRes = await client.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    temperature: 0.2,
-    messages: [{ role: "user", content: secondExpandPrompt }]
-  });
-
-  return parseStoryboardJson(secondExpandRes.choices[0].message.content);
-}
-
-return expanded;
+  return currentStoryboard;
 }
 
 
@@ -3164,11 +3258,12 @@ export async function POST(req) {
   try {
     await connectToDB();
 
-    const {
+   const {
       title,
       prompt,
       previousPages = [],
       contentProfile = "manga_long",
+      chapterNumber = 1,
     } = await req.json();
 
     const safePrompt = String(prompt || "")
@@ -3186,6 +3281,17 @@ export async function POST(req) {
     if (!prompt) {
       throw new Error("Prompt vacío");
     }
+
+    const forceLongChapter = `
+LONG CHAPTER COMPLETION RULES:
+- This chapter contains multiple major events.
+- Never stop in the middle of the chapter.
+- The ending must always be included.
+- If the story contains alchemy, missions, combat, rewards, meditation or spiritual connection, each must appear.
+- Minimum pages for this kind of chapter: 18.
+- Minimum total panels: 70.
+- The final panels must adapt the last paragraph of the source text.
+`;
 
     const scriptPrompt = `
 Generate a dark seinen manga storyboard for ${storyProfile.storyboardFormat}.
@@ -3298,6 +3404,8 @@ Continuity rules:
 
 Previous pages:
 ${previousPages.length ? JSON.stringify(previousPages).slice(0, 5000) : "[]"}
+
+${forceLongChapter}
 
 Story request:
 ${safePrompt}
@@ -4488,12 +4596,13 @@ cinematic scene
           charactersData[0].referenceImage = imageResult.generatedReferenceImage;
           await charactersData[0].save();
         }
-
-        const imageUrl = await uploadMangaImage(
-          base64,
-          page.page,
-          panelIndex
-        );
+      const imageUrl = await uploadMangaImage(
+        base64,
+        title,
+        chapterNumber || 1,
+        page.page,
+        panelIndex
+      );
 
         panel.imageUrl = imageUrl;
 panel.animation = payload.animation || panel.animation || getDefaultPanelAnimation(panel);
