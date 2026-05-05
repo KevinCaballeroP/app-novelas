@@ -30,6 +30,12 @@ const LOCKED_CHARACTER_NAMES = [
   "Amanecer",
   "Mapa",
   "Lian Han",
+  "Sofía Gonzales",
+"Farid León",
+"Yang Hen",
+"Maestro Yang Hen",
+"Lucas Torres",
+"Hermanos Torres",
 ];
 
 const DETECTABLE_CHARACTER_NAMES = [
@@ -54,6 +60,15 @@ const DETECTABLE_CHARACTER_NAMES = [
   "Shane Han",
   "Lin Kanc",
    "Lian Han",
+   "Sofía",
+"Sofía Gonzales",
+"Farid",
+"Farid León",
+"Yang Hen",
+"Maestro Yang Hen",
+"Lucas",
+"Lucas Torres",
+"Hermanos Torres",
 ];
 
 const CHARACTER_NAME_ALIASES = {
@@ -91,6 +106,22 @@ const CHARACTER_NAME_ALIASES = {
 "lian han": "Lian Han",
 "maestra lian": "Lian Han",
 "maestra lian han": "Lian Han",
+sofia: "Sofía Gonzales",
+"sofía": "Sofía Gonzales",
+"sofia gonzales": "Sofía Gonzales",
+"sofía gonzales": "Sofía Gonzales",
+
+farid: "Farid León",
+"farid leon": "Farid León",
+"farid león": "Farid León",
+
+"yang hen": "Yang Hen",
+"maestro yang": "Yang Hen",
+"maestro yang hen": "Yang Hen",
+
+lucas: "Lucas Torres",
+"lucas torres": "Lucas Torres",
+"hermanos torres": "Lucas Torres",
 };
 const SECT_VISUALS = {
   "dragón carmesí": {
@@ -2252,6 +2283,345 @@ dark fantasy cultivator aesthetic
       },
       $setOnInsert: {
         name: "Lian Han",
+        referenceImage: null,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+}
+// ================= SOFÍA GONZALES =================
+if (
+  lowerName === "sofia" ||
+  lowerName === "sofía" ||
+  lowerName === "sofia gonzales" ||
+  lowerName === "sofía gonzales"
+) {
+  const identityPrompt = `
+(1woman:1.7),
+solo,
+adult woman,
+Sofía Gonzales,
+elegant female disciple,
+long light brown hair,
+light chestnut hair only,
+amber eyes,
+warm but refined expression,
+serene spiritual aura,
+slim feminine body,
+graceful posture,
+sect disciple robes,
+light blue and silver clothing,
+fully dressed,
+cultivator aesthetic,
+soft but intelligent beauty,
+same exact face,
+same exact hairstyle,
+same exact eye color,
+same exact character,
+recognizable feminine silhouette,
+dark fantasy cultivator aesthetic,
+no male traits,
+no masculine face
+`;
+
+  return await Character.findOneAndUpdate(
+    {
+      mangaTitle,
+      name: { $regex: `^${escapeRegex("Sofía Gonzales")}$`, $options: "i" },
+    },
+    {
+      $set: {
+        identityPrompt,
+        seed: generateCharacterSeed("Sofía Gonzales"),
+        gender: "female",
+        visualStylePreset: stylePreset,
+        profileVersion: CURRENT_PROFILE_VERSION,
+        lockIdentity: true,
+
+        cultivationLevel: existingCharacter?.cultivationLevel || "D2",
+        evolutionStage: existingCharacter?.evolutionStage || 1,
+
+        abilityName: existingCharacter?.abilityName || "Aura Serena",
+        abilityPrompt:
+          existingCharacter?.abilityPrompt ||
+          "serene spiritual aura, graceful light energy, refined disciple energy",
+        abilityElements:
+          existingCharacter?.abilityElements?.length
+            ? existingCharacter.abilityElements
+            : ["light", "grace", "aura"],
+        abilityColor: existingCharacter?.abilityColor || "soft gold",
+        abilityVfx:
+          existingCharacter?.abilityVfx?.length
+            ? existingCharacter.abilityVfx
+            : ["light aura", "gentle particles", "refined glow"],
+
+        combatStyle: existingCharacter?.combatStyle || "balanced",
+        preferredShots:
+          existingCharacter?.preferredShots?.length
+            ? existingCharacter.preferredShots
+            : ["medium shot", "elegant pose", "sect dialogue"],
+        animationProfile:
+          existingCharacter?.animationProfile || "graceful",
+      },
+      $setOnInsert: {
+        name: "Sofía Gonzales",
+        referenceImage: null,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+}
+
+// ================= FARID LEÓN =================
+if (
+  lowerName === "farid" ||
+  lowerName === "farid leon" ||
+  lowerName === "farid león"
+) {
+  const identityPrompt = `
+(1man:1.8),
+solo,
+adult man,
+Farid León,
+arrogant noble disciple,
+dark hair,
+dark hair only,
+golden sect robes,
+sharp masculine face,
+cold arrogant eyes,
+dominant noble expression,
+broad shoulders,
+slim powerful masculine body,
+wealthy sect heir,
+elite cultivator aesthetic,
+golden aura,
+high-status presence,
+same exact face,
+same exact hairstyle,
+same exact eye color,
+same exact character,
+recognizable male silhouette,
+dark fantasy cultivator aesthetic,
+fully dressed,
+no female traits
+`;
+
+  return await Character.findOneAndUpdate(
+    {
+      mangaTitle,
+      name: { $regex: `^${escapeRegex("Farid León")}$`, $options: "i" },
+    },
+    {
+      $set: {
+        identityPrompt,
+        seed: generateCharacterSeed("Farid León"),
+        gender: "male",
+        visualStylePreset: stylePreset,
+        profileVersion: CURRENT_PROFILE_VERSION,
+        lockIdentity: true,
+
+        cultivationLevel: existingCharacter?.cultivationLevel || "D1",
+        evolutionStage: existingCharacter?.evolutionStage || 1,
+
+        abilityName: existingCharacter?.abilityName || "Presión Dorada",
+        abilityPrompt:
+          existingCharacter?.abilityPrompt ||
+          "golden oppressive aura, elite noble energy, spiritual pressure",
+        abilityElements:
+          existingCharacter?.abilityElements?.length
+            ? existingCharacter.abilityElements
+            : ["gold", "pressure", "authority"],
+        abilityColor: existingCharacter?.abilityColor || "gold",
+        abilityVfx:
+          existingCharacter?.abilityVfx?.length
+            ? existingCharacter.abilityVfx
+            : ["golden aura", "dominant pressure", "light distortion"],
+
+        combatStyle: existingCharacter?.combatStyle || "aggressive",
+        preferredShots:
+          existingCharacter?.preferredShots?.length
+            ? existingCharacter.preferredShots
+            : ["dominant pose", "arena confrontation", "noble close-up"],
+        animationProfile:
+          existingCharacter?.animationProfile || "dominant_rival",
+      },
+      $setOnInsert: {
+        name: "Farid León",
+        referenceImage: null,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+}
+
+// ================= MAESTRO YANG HEN =================
+if (
+  lowerName === "yang hen" ||
+  lowerName === "maestro yang hen" ||
+  lowerName === "maestro yang"
+) {
+  const identityPrompt = `
+(1man:1.9),
+solo,
+elder adult man,
+Yang Hen,
+supreme sect master,
+gray cultivation robes,
+storm master aesthetic,
+electric spiritual aura,
+powerful elder presence,
+sharp mature masculine face,
+long dark-gray hair,
+spiritual beard,
+cold authoritative gaze,
+lightning pressure,
+towering presence,
+broad shoulders,
+master cultivator body,
+same exact face,
+same exact hairstyle,
+same exact aura,
+same exact character,
+recognizable elder silhouette,
+thunder sect authority,
+dark fantasy cultivator aesthetic,
+fully dressed,
+no female traits
+`;
+
+  return await Character.findOneAndUpdate(
+    {
+      mangaTitle,
+      name: { $regex: `^${escapeRegex("Yang Hen")}$`, $options: "i" },
+    },
+    {
+      $set: {
+        identityPrompt,
+        seed: generateCharacterSeed("Yang Hen"),
+        gender: "male",
+        visualStylePreset: stylePreset,
+        profileVersion: CURRENT_PROFILE_VERSION,
+        lockIdentity: true,
+
+        cultivationLevel: existingCharacter?.cultivationLevel || "Nascent Soul",
+        evolutionStage: existingCharacter?.evolutionStage || 5,
+
+        abilityName: existingCharacter?.abilityName || "Autoridad del Trueno",
+        abilityPrompt:
+          existingCharacter?.abilityPrompt ||
+          "massive lightning aura, overwhelming spiritual pressure, thunder authority",
+        abilityElements:
+          existingCharacter?.abilityElements?.length
+            ? existingCharacter.abilityElements
+            : ["lightning", "authority", "master"],
+        abilityColor: existingCharacter?.abilityColor || "electric blue",
+        abilityVfx:
+          existingCharacter?.abilityVfx?.length
+            ? existingCharacter.abilityVfx
+            : [
+                "lightning arcs",
+                "storm pressure",
+                "thunder aura",
+                "spiritual dominance",
+              ],
+
+        combatStyle: existingCharacter?.combatStyle || "master",
+        preferredShots:
+          existingCharacter?.preferredShots?.length
+            ? existingCharacter.preferredShots
+            : ["wide authority shot", "master platform", "lightning descent"],
+        animationProfile:
+          existingCharacter?.animationProfile || "master_presence",
+      },
+      $setOnInsert: {
+        name: "Yang Hen",
+        referenceImage: null,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+}
+
+// ================= LUCAS TORRES =================
+if (
+  lowerName === "lucas" ||
+  lowerName === "lucas torres"
+) {
+  const identityPrompt = `
+(1man:1.8),
+solo,
+adult man,
+Lucas Torres,
+strong loyal disciple,
+short dark hair,
+strong masculine face,
+determined expression,
+broad shoulders,
+athletic cultivator body,
+disciple combat robes,
+reliable ally,
+same exact face,
+same exact hairstyle,
+same exact character,
+recognizable male silhouette,
+dark fantasy cultivator aesthetic,
+fully dressed,
+no female traits
+`;
+
+  return await Character.findOneAndUpdate(
+    {
+      mangaTitle,
+      name: { $regex: `^${escapeRegex("Lucas Torres")}$`, $options: "i" },
+    },
+    {
+      $set: {
+        identityPrompt,
+        seed: generateCharacterSeed("Lucas Torres"),
+        gender: "male",
+        visualStylePreset: stylePreset,
+        profileVersion: CURRENT_PROFILE_VERSION,
+        lockIdentity: true,
+
+        cultivationLevel: existingCharacter?.cultivationLevel || "D2",
+        evolutionStage: existingCharacter?.evolutionStage || 1,
+
+        abilityName: existingCharacter?.abilityName || "Defensa de Acero",
+        abilityPrompt:
+          existingCharacter?.abilityPrompt ||
+          "solid combat aura, defensive pressure, disciplined warrior energy",
+        abilityElements:
+          existingCharacter?.abilityElements?.length
+            ? existingCharacter.abilityElements
+            : ["defense", "steel", "combat"],
+        abilityColor: existingCharacter?.abilityColor || "steel gray",
+        abilityVfx:
+          existingCharacter?.abilityVfx?.length
+            ? existingCharacter.abilityVfx
+            : ["combat aura", "steel pressure", "disciplined stance"],
+
+        combatStyle: existingCharacter?.combatStyle || "defensive",
+        preferredShots:
+          existingCharacter?.preferredShots?.length
+            ? existingCharacter.preferredShots
+            : ["combat stance", "brotherhood pose", "battle support"],
+        animationProfile:
+          existingCharacter?.animationProfile || "support_warrior",
+      },
+      $setOnInsert: {
+        name: "Lucas Torres",
         referenceImage: null,
       },
     },
