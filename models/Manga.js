@@ -8,6 +8,30 @@ const PanelSchema = new mongoose.Schema(
     imageUrl: { type: String, default: "" },
     imageB64: { type: String, default: "" },
     order: { type: Number, required: true },
+
+    // Storyboard director fields
+    characters: { type: [String], default: [] },
+    sceneFocus: { type: String, default: "" },
+    panelKind: { type: String, default: "" },
+    viewAngle: { type: String, default: "front" },
+    directorIntent: { type: String, default: "" },
+    emotionalBeat: { type: String, default: "" },
+    visualPriority: { type: String, default: "medium" },
+    worldMode: { type: String, default: "auto" },
+
+    // Animation & video
+    animation: { type: mongoose.Schema.Types.Mixed, default: null },
+    veoCandidate: { type: Boolean, default: false },
+    veoPrompt: { type: String, default: "" },
+    manualVideoUrl: { type: String, default: "" },
+    generatedFrames: { type: [String], default: [] },
+
+    // Image generation result
+    finalPrompt: { type: String, default: "" },
+    renderMeta: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // Review flow
+    approved: { type: Boolean, default: false },
   },
   { _id: false }
 );

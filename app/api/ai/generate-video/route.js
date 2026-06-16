@@ -81,10 +81,14 @@ function escapePathForFFmpeg(filePath) {
 function normalizeCaptionForFile(text = "") {
   return String(text)
     .replace(/\r/g, "")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’´`]/g, "'")
+    .replace(/[""]/g, '"')
+    .replace(/[''´`]/g, "'")
     .replace(/\\/g, "")
     .replace(/%/g, " por ciento ")
+    .replace(/—/g, "-")
+    .replace(/–/g, "-")
+    .replace(/…/g, "...")
+    .replace(/[^\x00-\x7FáéíóúÁÉÍÓÚñÑüÜ¿¡.,;:!?'"()\- ]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -115,6 +119,35 @@ function getAudioDuration(ffmpegPath, audioPath) {
   }
 
   return parseFloat(result.stdout.trim());
+}
+
+function getVideoDuration(ffmpegPath, videoPath) {
+  const ffprobePath = getFfprobePath(ffmpegPath);
+
+  const result = spawnSync(
+    ffprobePath,
+    [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      videoPath,
+    ],
+    {
+      encoding: "utf8",
+      shell: false,
+    }
+  );
+
+  if (result.error) {
+    throw new Error(`No se pudo ejecutar ffprobe (video): ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`No se pudo obtener duración del video: ${result.stderr || "sin stderr"}`);
+  }
+
+  const parsed = parseFloat(result.stdout.trim());
+  return isNaN(parsed) ? 0 : parsed;
 }
 
 function inferPanelMood(caption = "", imagePrompt = "") {
@@ -252,6 +285,7 @@ function buildAnimationFilter({
   imagePrompt = "",
   panelIndex = 0,
   format = "tiktok",
+  isVideoSource = false, // ← NEW: when true, skip zoompan (video already has motion)
 }) {
   const totalFrames = Math.max(Math.round(duration * fps), 1);
   const mood = style === "auto" ? inferPanelMood(caption, imagePrompt) : style;
@@ -318,9 +352,12 @@ function buildAnimationFilter({
     addFlash = duration > 1.0;
   }
 
-  parts.push(
-    `zoompan=z='${zoomExpr}':d=${totalFrames}:x='${xExpr}':y='${yExpr}':s=${width}x${height}:fps=${fps}`
-  );
+  // ─ Only add zoompan for static image sources. Videos already contain motion. ─
+  if (!isVideoSource) {
+    parts.push(
+      `zoompan=z='${zoomExpr}':d=${totalFrames}:x='${xExpr}':y='${yExpr}':s=${width}x${height}:fps=${fps}`
+    );
+  }
 
   if (addShake) {
     parts.push(`eq=brightness='if(lt(mod(t,0.18),0.05),0.008,0)'`);
@@ -352,10 +389,6 @@ function splitCaptionIntoLines(text = "", wordsPerLine = 4, maxLines = 3) {
   for (let i = 0; i < words.length; i += wordsPerLine) {
     lines.push(words.slice(i, i + wordsPerLine).join(" "));
     if (lines.length >= maxLines) {
-      const remaining = words.slice(i + wordsPerLine);
-      if (remaining.length) {
-        lines[lines.length - 1] += ` ${remaining.join(" ")}`;
-      }
       break;
     }
   }
@@ -363,9 +396,16 @@ function splitCaptionIntoLines(text = "", wordsPerLine = 4, maxLines = 3) {
   return lines;
 }
 
+function getSubtitleFontPath() {
+  return process.env.SUBTITLE_FONT_PATH || "C:/Windows/Fonts/arial.ttf";
+}
+
 function buildTextFilter(textPath, mood, format = "tiktok") {
   const profile = getFormatProfile(format);
   const escapedTextPath = escapePathForFFmpeg(textPath);
+  const fontPath = escapePathForFFmpeg(getSubtitleFontPath());
+
+  console.log("SUBTITLE FONT:", getSubtitleFontPath());
 
   let fontsize = profile.subtitleFontSize;
   let boxColor = "black@0.55";
@@ -380,7 +420,7 @@ function buildTextFilter(textPath, mood, format = "tiktok") {
   }
 
   return [
-    `drawtext=textfile='${escapedTextPath}'`,
+    `drawtext=fontfile='${fontPath}':textfile='${escapedTextPath}'`,
     `fontcolor=white`,
     `fontsize=${fontsize}`,
     `line_spacing=10`,
@@ -592,6 +632,13 @@ async function buildSharedPanelAssets(tempDir, ffmpegPath, panelData, usePanelVo
     const imagePath = path.join(tempDir, `shared_img_${index}.png`);
     await downloadFile(imageUrl, imagePath);
 
+    let manualVideoPath = "";
+
+    if (panel.manualVideoUrl) {
+      manualVideoPath = path.join(tempDir, `shared_manual_video_${index}.mp4`);
+      await downloadFile(panel.manualVideoUrl, manualVideoPath);
+    }
+
     let voicePath = "";
     let realAudioDuration = 0;
 
@@ -606,11 +653,12 @@ async function buildSharedPanelAssets(tempDir, ffmpegPath, panelData, usePanelVo
     }
 
     sharedPanels.push({
-  ...panel,
-  imagePath,
-  voicePath,
-  realAudioDuration,
-});
+      ...panel,
+      imagePath,
+      manualVideoPath,
+      voicePath,
+      realAudioDuration,
+    });
   }
 
   return sharedPanels;
@@ -627,6 +675,9 @@ async function generateSingleFormatVideo({
 }) {
   const profile = getFormatProfile(format);
   const { width, height, fps, panelPause, minPanelDuration } = profile;
+
+  // Small visual head-start before each narration starts (seconds)
+  const VOICE_START_DELAY = 0.55;
 
   const formatDir = path.join(tempDir, format);
   fs.mkdirSync(formatDir, { recursive: true });
@@ -646,14 +697,22 @@ async function generateSingleFormatVideo({
     let duration = format === "youtube" ? 2.4 : 1.8;
 
     if (usePanelVoices && panel.voicePath) {
-      duration = panel.realAudioDuration + panelPause;
+      // Visual duration = delay + voice + post-pause so image appears before narrator starts
+      duration = VOICE_START_DELAY + panel.realAudioDuration + panelPause;
 
       if (duration < minPanelDuration) {
         duration = minPanelDuration;
       }
 
+      // 1. Pre-voice silence (visual head-start)
+      const preVoiceSilencePath = path.join(formatDir, `pre_voice_${index}.mp3`);
+      createSilenceAudio(ffmpegPath, preVoiceSilencePath, VOICE_START_DELAY);
+      audioSegmentPaths.push(preVoiceSilencePath);
+
+      // 2. Narration
       audioSegmentPaths.push(panel.voicePath);
 
+      // 3. Post-panel pause
       if (panelPause > 0) {
         const pauseAudioPath = path.join(formatDir, `pause_${index}.mp3`);
         createSilenceAudio(ffmpegPath, pauseAudioPath, panelPause);
@@ -665,10 +724,13 @@ async function generateSingleFormatVideo({
       duration = Math.max(estimated, minPanelDuration);
     }
 
+    // Si hay voz, manda la voz. Si no hay voz, usa animation.duration.
     const panelDuration =
-      Number(panel.animation?.duration) > 0
-        ? Number(panel.animation.duration)
-        : duration;
+      usePanelVoices && panel.voicePath
+        ? duration
+        : Number(panel.animation?.duration) > 0
+          ? Number(panel.animation.duration)
+          : duration;
 
     const baseMood = resolvePanelMood(
       panel,
@@ -682,9 +744,34 @@ async function generateSingleFormatVideo({
       panel.animation?.camera || "auto"
     );
 
-    let sourceVisualPath = panel.imagePath;
+    // ── Manual video: get real duration and adjust panelDuration accordingly ─────────
+    const isManualVideo = !!panel.manualVideoPath;
+    let manualVideoDuration = 0;
 
-    if (Array.isArray(panel.generatedFrames) && panel.generatedFrames.length > 1) {
+    if (isManualVideo) {
+      manualVideoDuration = getVideoDuration(ffmpegPath, panel.manualVideoPath);
+      console.log(`🎥 Panel ${index}: video manual duration = ${manualVideoDuration}s`);
+    }
+
+    let sourceVisualPath = panel.manualVideoPath || panel.imagePath;
+
+    const motion = String(panel.animation?.motion || "").toLowerCase();
+    const camera = String(panel.animation?.camera || "").toLowerCase();
+
+    const isImportantMotion =
+      motion === "action" ||
+      motion === "burst" ||
+      motion === "reveal" ||
+      camera === "impact_zoom" ||
+      camera === "fast_zoom";
+
+    // Prioridad: si FastAPI generó frames, usarlos para dar sensación de animación real.
+   if (
+  sourceVisualPath === panel.imagePath &&
+  Array.isArray(panel.generatedFrames) &&
+  panel.generatedFrames.length > 1 &&
+  isImportantMotion
+)  {
       const frameDir = path.join(formatDir, `panel_${index}_frames`);
       fs.mkdirSync(frameDir, { recursive: true });
 
@@ -695,29 +782,55 @@ async function generateSingleFormatVideo({
           frameDir,
           `frame_${String(f).padStart(2, "0")}.png`
         );
-        fs.writeFileSync(framePath, Buffer.from(panel.generatedFrames[f], "base64"));
+
+        fs.writeFileSync(
+          framePath,
+          Buffer.from(panel.generatedFrames[f], "base64")
+        );
+
         framePaths.push(framePath);
       }
 
       const seqClipPath = path.join(frameDir, `sequence_${index}.mp4`);
-     createVideoFromFrameSequence(ffmpegPath, framePaths, seqClipPath, 16);
+      createVideoFromFrameSequence(ffmpegPath, framePaths, seqClipPath, 16);
       sourceVisualPath = seqClipPath;
     }
+
+    // ── Resolve final panelDuration ─────────────────────────────────────────────
+    let resolvedPanelDuration = panelDuration;
+
+    if (isManualVideo && manualVideoDuration > 0) {
+      if (usePanelVoices && panel.voicePath) {
+        // Account for delay so the full audio (delay + voice + pause) fits in the visual clip
+        const audioTotal = VOICE_START_DELAY + panel.realAudioDuration + panelPause;
+        resolvedPanelDuration = Math.max(manualVideoDuration, audioTotal);
+      } else {
+        // No voice: use video's natural duration
+        resolvedPanelDuration = manualVideoDuration;
+      }
+      console.log(`🎥 Panel ${index}: resolvedPanelDuration = ${resolvedPanelDuration}s (manualVideo=${manualVideoDuration}s)`);
+    } else {
+      resolvedPanelDuration = panelDuration;
+    }
+
+    const isVideoSource = sourceVisualPath.toLowerCase().endsWith(".mp4");
 
     const { vfParts, mood } = buildAnimationFilter({
       width,
       height,
-      duration: panelDuration,
+      duration: resolvedPanelDuration,
       fps,
       style: finalMood,
       caption: captionForVideo,
       imagePrompt: panel.imagePrompt,
       panelIndex: panel.panelIndex ?? index,
       format,
+      isVideoSource, // ← pass flag so zoompan is skipped for video
     });
 
     if (captionForVideo) {
       const maxLines = format === "youtube" ? 2 : 3;
+
       const lines = splitCaptionIntoLines(
         normalizeCaptionForFile(captionForVideo),
         profile.wordsPerLine,
@@ -731,28 +844,21 @@ async function generateSingleFormatVideo({
     }
 
     const vf = vfParts.join(",");
-    const isVideoSource = sourceVisualPath.toLowerCase().endsWith(".mp4");
 
-    const ffmpegArgs = isVideoSource
-      ? [
+    let ffmpegArgs;
+
+    if (isManualVideo && manualVideoDuration > 0) {
+      // ─── MANUAL VIDEO BRANCH ────────────────────────────────────────────────────────
+      // - If voice is longer than the video, loop the video to fill the gap.
+      // - Always discard the original audio (-an) — narrador+music is added later.
+      if (resolvedPanelDuration > manualVideoDuration) {
+        // Voice is longer: loop video until voice finishes
+        ffmpegArgs = [
           "-y",
-          "-stream_loop", "-1",
+          "-stream_loop", "-1",          // infinite loop input
           "-i", sourceVisualPath,
-          "-t", String(panelDuration),
+          "-t", String(resolvedPanelDuration), // cut at voice length
           "-vf", vf,
-          "-r", String(fps),
-          "-pix_fmt", "yuv420p",
-          "-c:v", "libx264",
-          "-preset", "medium",
-          "-an",
-          rawClipPath,
-        ]
-      : [
-          "-y",
-          "-loop", "1",
-          "-i", sourceVisualPath,
-          "-vf", vf,
-          "-t", String(panelDuration),
           "-r", String(fps),
           "-pix_fmt", "yuv420p",
           "-c:v", "libx264",
@@ -760,6 +866,51 @@ async function generateSingleFormatVideo({
           "-an",
           rawClipPath,
         ];
+      } else {
+        // Video is longer than (or equal to) voice: play full video, no trim
+        ffmpegArgs = [
+          "-y",
+          "-i", sourceVisualPath,
+          "-vf", vf,
+          "-r", String(fps),
+          "-pix_fmt", "yuv420p",
+          "-c:v", "libx264",
+          "-preset", "medium",
+          "-an",
+          rawClipPath,
+        ];
+      }
+    } else if (isVideoSource) {
+      // ─── SEQUENCE / GENERATED FRAMES BRANCH (mp4 from FastAPI) ────────────────
+      ffmpegArgs = [
+        "-y",
+        "-stream_loop", "-1",
+        "-i", sourceVisualPath,
+        "-t", String(resolvedPanelDuration),
+        "-vf", vf,
+        "-r", String(fps),
+        "-pix_fmt", "yuv420p",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-an",
+        rawClipPath,
+      ];
+    } else {
+      // ─── STATIC IMAGE BRANCH ──────────────────────────────────────────────────────
+      ffmpegArgs = [
+        "-y",
+        "-loop", "1",
+        "-i", sourceVisualPath,
+        "-vf", vf,
+        "-t", String(resolvedPanelDuration),
+        "-r", String(fps),
+        "-pix_fmt", "yuv420p",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-an",
+        rawClipPath,
+      ];
+    }
 
     const result = spawnSync(ffmpegPath, ffmpegArgs, {
       encoding: "utf8",
@@ -791,7 +942,10 @@ async function generateSingleFormatVideo({
 
   let outputToUpload = finalVideoPath;
   let finalAudioPath = "";
-  const finalVideoWithAudioPath = path.join(formatDir, `final_${format}_with_audio.mp4`);
+  const finalVideoWithAudioPath = path.join(
+    formatDir,
+    `final_${format}_with_audio.mp4`
+  );
 
   if (audioSegmentPaths.length > 0) {
     finalAudioPath = path.join(formatDir, `final_${format}_voice.mp3`);
@@ -854,7 +1008,6 @@ async function generateSingleFormatVideo({
     audioSegmentCount: audioSegmentPaths.length,
   };
 }
-
 export async function POST(req) {
   try {
     const {
@@ -898,6 +1051,7 @@ export async function POST(req) {
           imagePrompt: cleanText(panel.imagePrompt || ""),
           generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
           animation: panel.animation || null,
+          manualVideoUrl: panel.manualVideoUrl || panel.flowVideoUrl || "",
         });
       }
     }

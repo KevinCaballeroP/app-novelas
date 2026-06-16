@@ -5,6 +5,61 @@ import { v2 as cloudinary } from "cloudinary";
 import fetch from "node-fetch";
 import Character from "@/models/Character";
 
+// ─── Phase 1 helper modules ──────────────────────────────────────────────────
+import {
+  detectEnvironmentKeywords as _detectEnvironmentKeywords,
+  detectObjectKeywords as _detectObjectKeywords,
+  detectGroupScene as _detectGroupScene,
+  detectAbilityKeywords as _detectAbilityKeywords,
+} from "./helpers/detectors.js";
+import {
+  buildEnvironmentDetails as _buildEnvironmentDetails,
+  buildObjectDetails as _buildObjectDetails,
+} from "./helpers/environmentHelpers.js";
+import { inferNarrativeVisualFocus as _inferNarrativeVisualFocus } from "./helpers/narrativeHelpers.js";
+import {
+  inferWorldMode as _inferWorldMode,
+  buildWorldModeStylePreset as _buildWorldModeStylePreset,
+} from "./helpers/worldModeHelpers.js";
+// ─── Phase 2 prompt modules ───────────────────────────────────────────────────
+import {
+  buildCharacterConsistencyAnchor as _buildCharacterConsistencyAnchor,
+  buildBackViewAnchor as _buildBackViewAnchor,
+  buildSoloReferencePrompt as _buildSoloReferencePrompt,
+  getDuoType as _getDuoType,
+  buildDefaultAbilityProfile as _buildDefaultAbilityProfile,
+  buildPersistentAbilityBlock as _buildPersistentAbilityBlock,
+  buildTechniqueVariationBlock as _buildTechniqueVariationBlock,
+} from "./prompts/characterPrompt.js";
+import {
+  detectCreatureKeywords as _detectCreatureKeywords,
+  buildCreatureDetails as _buildCreatureDetails,
+} from "./prompts/creaturePrompt.js";
+import {
+  detectSectMentions as _detectSectMentions,
+  hasSectBannerFocus as _hasSectBannerFocus,
+  buildSectBannerDetails as _buildSectBannerDetails,
+  isEnvironmentDominantScene as _isEnvironmentDominantScene,
+  isCreatureDominantScene as _isCreatureDominantScene,
+  isObjectDominantScene as _isObjectDominantScene,
+  buildAbilityDetails as _buildAbilityDetails,
+  isWorldExplanation as _isWorldExplanation,
+  buildWorldExplanationPrompt as _buildWorldExplanationPrompt,
+} from "./prompts/environmentPrompt.js";
+import { buildCrowdSupportPrompt as _buildCrowdSupportPrompt } from "./prompts/groupPrompt.js";
+import {
+  getPanelComposition as _getPanelComposition,
+  buildStylePreset as _buildStylePreset,
+  buildPersonalityBlock as _buildPersonalityBlock,
+  shouldForceFaceView as _shouldForceFaceView,
+} from "./prompts/cameraPrompt.js";
+import {
+  getMangaStyle as _getMangaStyle,
+  detectSceneType as _detectSceneType,
+} from "./prompts/negativePrompt.js";
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 export const runtime = "nodejs";
 
 // ================= CLOUDINARY =================
@@ -24,11 +79,8 @@ const LOCKED_CHARACTER_NAMES = [
   "Cristian",
   "Kelvin",
   "Mefisto",
-  "Siete",
   "Shane",
 "Shane Han",
-  "Amanecer",
-  "Mapa",
   "Lian Han",
   "Sofía Gonzales",
 "Farid León",
@@ -43,9 +95,6 @@ const DETECTABLE_CHARACTER_NAMES = [
   "Cristian",
   "Kelvin",
   "Mefisto",
-  "Siete",
-  "Amanecer",
-  "Mapa",
   "Lex",
   "Natalia",
   "Camilo",
@@ -76,9 +125,6 @@ const CHARACTER_NAME_ALIASES = {
   cristian: "Cristian",
   kelvin: "Kelvin",
   mefisto: "Mefisto",
-  siete: "Siete",
-  amanecer: "Amanecer",
-  mapa: "Mapa",
 
   lex: "Lex",
   alex: "Lex",
@@ -215,7 +261,7 @@ const CURRENT_PROFILE_VERSION = 10;
 function normalizeName(name) {
   return String(name || "").trim();
 }
-function getDefaultPanelAnimation(panel = {}) {
+export function getDefaultPanelAnimation(panel = {}) {
   const panelKind = String(panel?.panelKind || "").toLowerCase();
   const sceneFocus = String(panel?.sceneFocus || "").toLowerCase();
   const imagePrompt = String(panel?.imagePrompt || "").toLowerCase();
@@ -506,7 +552,7 @@ function generateCharacterSeed(name) {
   return Math.abs(hash) % 100000000;
 }
 
-function generateStyleSeed(title) {
+export function generateStyleSeed(title) {
   let hash = 0;
 
   for (let i = 0; i < title.length; i++) {
@@ -592,886 +638,105 @@ function hasCharacterPresence(text, characters = []) {
   );
 }
 
-function detectEnvironmentKeywords(text = "") {
-  const t = String(text || "").toLowerCase();
+// ─── Extracted to helpers/detectors.js (Phase 1) ────────────────────────────
+const detectAbilityKeywords = _detectAbilityKeywords;
+const detectEnvironmentKeywords = _detectEnvironmentKeywords;
+const detectObjectKeywords = _detectObjectKeywords;
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const map = [
-    { key: "tower", words: ["tower", "torre", "torres"] },
-    { key: "arena", words: ["arena", "coliseo", "stadium", "battlefield", "campo de batalla"] },
-    { key: "sect", words: ["sect", "secta", "temple", "palace", "clan hall", "headquarters"] },
-    { key: "forest", words: ["forest", "bosque", "woods"] },
-    { key: "mountain", words: ["mountain", "montaña", "montañas", "peak", "cumbre"] },
-    { key: "city", words: ["city", "ciudad", "village", "pueblo"] },
-    { key: "sky", words: ["sky", "cielo", "clouds", "storm", "tormenta"] },
-    { key: "throne_room", words: ["throne room", "salón del trono", "royal hall", "grand hall"] },
-    { key: "hall", words: ["hall", "salón", "pasillo", "corridor"] },
-    { key: "ruins", words: ["ruins", "ruinas", "ancient ruins"] },
-  ];
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildAbilityDetails = _buildAbilityDetails;
 
-  return map
-    .filter(item => item.words.some(w => t.includes(w)))
-    .map(item => item.key);
-}
+// ─── Extracted to helpers/detectors.js (Phase 1) ────────────────────────────
+const detectGroupScene = _detectGroupScene;
+// ─────────────────────────────────────────────────────────────────────────────
 
-function detectObjectKeywords(text = "") {
-  const t = String(text || "").toLowerCase();
+// ─── Extracted to helpers/environmentHelpers.js (Phase 1) ───────────────────
+// Local aliases preserve all internal call-sites.
+const buildEnvironmentDetails = _buildEnvironmentDetails;
+const buildObjectDetails = _buildObjectDetails;
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const map = [
-    { key: "weapon", words: ["weapon", "arma", "sword", "espada", "blade", "lanza", "spear", "dagger", "katana"] },
-    { key: "lights", words: ["lights", "luces", "glow", "glowing lights", "floating lights", "orbs", "brillos", "resplandor"] },
-    { key: "artifact", words: ["artifact", "artefacto", "relic", "reliquia"] },
-    { key: "portal", words: ["portal", "gate", "puerta dimensional"] },
-    { key: "altar", words: ["altar", "ritual altar"] },
-    { key: "book", words: ["book", "libro", "manual", "scroll", "pergamino"] },
-    { key: "chain", words: ["chain", "cadena", "chains", "cadenas"] },
-    { key: "crystal", words: ["crystal", "cristal", "gem", "gema"] },
-        { key: "lotus", words: ["loto", "loto carmesi", "loto carmesí", "loto del deseo", "flor de loto", "flor de loto carmesi", "flor de loto carmesí"] },
-  ];
 
-  return map
-    .filter(item => item.words.some(w => t.includes(w)))
-    .map(item => item.key);
-}
+export function forceLiteralEnvironmentPrompt(panel) {
+  const dialogue = String(panel.dialogue || "").toLowerCase();
+  const imagePrompt = String(panel.imagePrompt || "").toLowerCase();
+  const combined = `${dialogue} ${imagePrompt}`;
 
-function detectAbilityKeywords(text = "") {
-  const t = String(text || "").toLowerCase();
-
-  return (
-    t.includes("habilidad") ||
-    t.includes("ira del dios de la guerra") ||
-    t.includes("despierta") ||
-    t.includes("llamas doradas") ||
-    t.includes("se envolvió en llamas doradas") ||
-    t.includes("velocidad inhumana") ||
-    t.includes("skill") ||
-    t.includes("power") ||
-    t.includes("poder") ||
-    t.includes("energia") ||
-    t.includes("energía") ||
-    t.includes("aura") ||
-    t.includes("explosion") ||
-    t.includes("explosión") ||
-    t.includes("shockwave") ||
-    t.includes("ataque") ||
-    t.includes("attack") ||
-    t.includes("golpe") ||
-    t.includes("magia") ||
-    t.includes("magic") ||
-    t.includes("spell") ||
-    t.includes("hechizo") ||
-    t.includes("invoca") ||
-    t.includes("invocar") ||
-    t.includes("summon") ||
-    t.includes("summoning") ||
-    t.includes("transforma") ||
-    t.includes("transformación") ||
-    t.includes("transformacion") ||
-    t.includes("fuego") ||
-    t.includes("fire") ||
-    t.includes("llamas") ||
-    t.includes("flames") ||
-    t.includes("hielo") ||
-    t.includes("ice") ||
-    t.includes("frost") ||
-    t.includes("rayo") ||
-    t.includes("lightning") ||
-    t.includes("electric") ||
-    t.includes("electricidad") ||
-    t.includes("sombra") ||
-    t.includes("shadow") ||
-    t.includes("dark energy") ||
-    t.includes("luz") ||
-    t.includes("holy light") ||
-    t.includes("radiant") ||
-    t.includes("beam") ||
-    t.includes("laser") ||
-    t.includes("mana") ||
-    t.includes("qi") ||
-    t.includes("chi") ||
-    t.includes("desató su poder") ||
-    t.includes("desato su poder") ||
-    t.includes("liberó su aura") ||
-    t.includes("libero su aura") ||
-    t.includes("activó su poder") ||
-    t.includes("activo su poder") ||
-    t.includes("usó su habilidad") ||
-    t.includes("uso su habilidad")
-  );
-}
-
-function buildAbilityDetails(text = "") {
-  const t = String(text || "").toLowerCase();
-  const parts = [];
-
-  if (["fuego", "fire", "llamas", "flames"].some(w => t.includes(w))) {
-    parts.push("flames around the body, burning aura, fire energy emission, heat distortion, embers in the air");
-  }
-
-  if (["hielo", "ice", "frost", "escarcha"].some(w => t.includes(w))) {
-    parts.push("ice shards, frost aura, cold mist, frozen particles, icy ground details");
-  }
-
-  if (["rayo", "lightning", "electric", "electricidad"].some(w => t.includes(w))) {
-    parts.push("lightning arcs, electric current around the body, bright impact flashes, charged atmosphere");
-  }
-
-  if (["oscuro", "dark", "shadow", "sombra"].some(w => t.includes(w))) {
-    parts.push("dark energy emission, shadow aura, black-purple particles, ominous smoky power");
-  }
-
-  if (["luz", "holy", "radiant", "sagrada"].some(w => t.includes(w))) {
-    parts.push("radiant light aura, holy light beams, glowing particles, brilliant energy halo");
-  }
-
-  if (["energia", "energía", "aura", "mana", "qi", "chi"].some(w => t.includes(w))) {
-    parts.push("visible energy aura, power emission, glowing spiritual particles, surrounding energy waves");
-  }
-
-  if (["explosion", "explosión", "shockwave"].some(w => t.includes(w))) {
-    parts.push("explosion impact, shockwave distortion, flying debris, violent energy burst");
-  }
-
-  if (["invoca", "invocar", "summon", "summoning"].some(w => t.includes(w))) {
-    parts.push("summoning circle, magical glyphs, ritual light, energy formation appearing");
-  }
-
-  if (["beam", "laser", "rayo de energia", "rayo de energía"].some(w => t.includes(w))) {
-    parts.push("energy beam, focused blast of light, projected power attack, strong directional impact");
-  }
-
-  if (["transforma", "transformación", "transformacion"].some(w => t.includes(w))) {
-    parts.push("transformation aura, body surrounded by power, energy metamorphosis effect, intense glowing transition");
-  }
-
-  return parts.join(", ");
-}
-
-function detectGroupScene(text = "") {
-  const t = String(text || "").toLowerCase();
-
-  return (
-    t.includes("group") ||
-    t.includes("grupo") ||
-    t.includes("crowd") ||
-    t.includes("multitud") ||
-    t.includes("several people") ||
-    t.includes("varios") ||
-    t.includes("many disciples") ||
-    t.includes("disciples") ||
-    t.includes("sect members") ||
-    t.includes("army") ||
-    t.includes("ejército") ||
-    t.includes("many warriors") ||
-    t.includes("multiple figures")
-  );
-}
-
-function buildEnvironmentDetails(text = "") {
-  const envs = detectEnvironmentKeywords(text);
-  const parts = [];
-
-  if (envs.includes("tower")) {
-    parts.push("massive ancient tower, colossal vertical structure, dominant architectural presence");
-  }
-  if (envs.includes("arena")) {
-    parts.push("battle arena, circular stone battlefield, wide combat ground");
-  }
-  if (envs.includes("sect")) {
-    parts.push("mystical sect headquarters, ancient eastern architecture, ceremonial halls");
-  }
-  if (envs.includes("forest")) {
-    parts.push("dark mystical forest, dense trees, spiritual fog");
-  }
-  if (envs.includes("mountain")) {
-    parts.push("towering mountain range, sacred peaks, dramatic scale");
-  }
-  if (envs.includes("city")) {
-    parts.push("fantasy cultivator city, ancient streets, eastern rooftops");
-  }
-  if (envs.includes("sky")) {
-    parts.push("dramatic sky, glowing clouds, mystical atmosphere");
-  }
-  if (envs.includes("throne_room")) {
-    parts.push("grand throne room, monumental hall, royal dark fantasy architecture");
-  }
-  if (envs.includes("hall")) {
-    parts.push("large ceremonial hall, detailed interior architecture");
-  }
-  if (envs.includes("ruins")) {
-    parts.push("ancient ruins, broken stone structures, old mystical remains");
-  }
-
-  return parts.join(", ");
-}
-
-function buildObjectDetails(text = "") {
-  const objs = detectObjectKeywords(text);
-  const parts = [];
-
-  if (objs.includes("weapon")) {
-    parts.push("prominent weapon in frame, detailed blade design, mystical metal reflections");
-  }
-  if (objs.includes("lights")) {
-    parts.push("floating spiritual lights, glowing particles, luminous magical atmosphere");
-  }
-  if (objs.includes("artifact")) {
-    parts.push("ancient magical artifact, detailed relic, mysterious power aura");
-  }
-  if (objs.includes("portal")) {
-    parts.push("glowing dimensional portal, mystical gateway, energy distortion");
-  }
-  if (objs.includes("altar")) {
-    parts.push("ritual altar, engraved stone, spiritual energy focus");
-  }
-  if (objs.includes("book")) {
-    parts.push("ancient book or scroll, arcane symbols, mystical manuscript");
-  }
-  if (objs.includes("chain")) {
-    parts.push("visible chains, metallic detail, ominous symbolic restraint");
-  }
-  if (objs.includes("crystal")) {
-    parts.push("glowing crystal, luminous gem core, magical refraction");
-  }
-  if (objs.includes("lotus")) {
-    parts.push("sacred mystical lotus flower, glowing crimson lotus petals, spiritual flower bloom, luminous floral core, magical blossom, real flower shape clearly visible");
-  }
-
-  return parts.join(", ");
-}
-function detectSectMentions(text = "") {
-  const t = String(text || "").toLowerCase();
-  const found = [];
-
-  for (const key of Object.keys(SECT_VISUALS)) {
-    if (t.includes(key)) {
-      found.push(SECT_VISUALS[key]);
-    }
-  }
-
-  const unique = [];
-  const seen = new Set();
-
-  for (const item of found) {
-    if (!item?.canonical) continue;
-    const k = item.canonical.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    unique.push(item);
-  }
-
-  return unique;
-}
-function hasSectBannerFocus(text = "") {
-  const t = String(text || "").toLowerCase();
-  const sects = detectSectMentions(t);
-
-  if (sects.length >= 1) return true;
-
-  return (
-    t.includes("secta") ||
-    t.includes("sectas") ||
-    t.includes("sect") ||
-    t.includes("facción") ||
-    t.includes("faccion") ||
-    t.includes("clan") ||
-    t.includes("banner") ||
-    t.includes("bandera") ||
-    t.includes("banderas") ||
-    t.includes("estandarte") ||
-    t.includes("estandartes") ||
-    t.includes("emblema") ||
-    t.includes("emblemas") ||
-    t.includes("simbolo") ||
-    t.includes("símbolo") ||
-    t.includes("simbolos") ||
-    t.includes("símbolos") ||
-    t.includes("insignia") ||
-    t.includes("insignias") ||
-    t.includes("sigil") ||
-    t.includes("crest")
-  );
-}
-
-function buildSectBannerDetails(text = "") {
-  const sects = detectSectMentions(text);
-  if (!sects.length) return "";
-
-  return sects.map((sect) => `
-sect name: ${sect.canonical},
-main symbol: ${sect.symbol},
-main colors: ${sect.colors},
-banner type: ${sect.banner},
-energy style: ${sect.aura},
-show a ceremonial sect flag, emblem, sigil or standard,
-the symbol must be readable,
-the design must feel iconic and recognizable,
-ancient eastern fantasy sect identity
-  `.trim()).join("\n");
-}
-
-function buildCrowdSupportPrompt(text = "") {
-  if (!detectGroupScene(text)) return "";
-
-  return `
-several background figures,
-group presence,
-supporting crowd silhouettes,
-disciples in the background,
-multiple people visible,
-scene must feel populated,
-do not make it a solo portrait
-`;
-}
-function isEnvironmentDominantScene(text = "") {
-  const t = String(text || "").toLowerCase();
-  const envs = detectEnvironmentKeywords(t);
-  const creatures = detectCreatureKeywords(t);
-  const objs = detectObjectKeywords(t);
-  const hasAbility = detectAbilityKeywords(t);
-
-  if (!envs.length) return false;
-  if (creatures.length) return false;
-  if (hasAbility) return false;
-
-  // si explícitamente pide primer plano de personaje, no forzar entorno
   if (
-    t.includes("close-up") ||
-    t.includes("primer plano") ||
-    t.includes("rostro") ||
-    t.includes("cara") ||
-    t.includes("face") ||
-    t.includes("portrait")
+    combined.includes("siete torres") ||
+    combined.includes("7 torres") ||
+    combined.includes("torres colosales") ||
+    combined.includes("torres emergieron") ||
+    combined.includes("las siete torres")
   ) {
-    return false;
+    panel.sceneFocus = "environment";
+    panel.panelKind = "panoramic_top";
+    panel.characters = [];
+    panel.imagePrompt = `
+seven colossal ancient towers rising from different cities around the world,
+one massive tower dominating the skyline,
+world-scale supernatural event,
+city streets below,
+people tiny in the distance,
+dramatic morning sky,
+spiritual blue light pillars,
+ancient mystical architecture,
+wide establishing shot,
+environment only,
+no main character,
+no anime girl portrait,
+no single person focus
+`.trim();
   }
 
-  return true;
+  return panel;
 }
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const detectSectMentions = _detectSectMentions;
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const hasSectBannerFocus = _hasSectBannerFocus;
 
-function isCreatureDominantScene(text = "") {
-  const t = String(text || "").toLowerCase();
-  const creatures = detectCreatureKeywords(t);
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildSectBannerDetails = _buildSectBannerDetails;
 
-  if (!creatures.length) return false;
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildCrowdSupportPrompt = _buildCrowdSupportPrompt;
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const isEnvironmentDominantScene = _isEnvironmentDominantScene;
 
-  // si además hay poder/habilidad humana, no forzamos monstruo total
-  if (detectAbilityKeywords(t)) return false;
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const isCreatureDominantScene = _isCreatureDominantScene;
 
-  return true;
-}
-
-function isObjectDominantScene(text = "") {
-  const t = String(text || "").toLowerCase();
-  const objs = detectObjectKeywords(t);
-  const envs = detectEnvironmentKeywords(t);
-  const creatures = detectCreatureKeywords(t);
-
-  if (!objs.length) return false;
-  if (envs.length) return false;
-  if (creatures.length) return false;
-  if (detectAbilityKeywords(t)) return false;
-
-  return true;
-}
-function inferNarrativeVisualFocus({
-  visualText = "",
-  dialogueText = "",
-  panelCharacters = []
-}) {
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const isObjectDominantScene = _isObjectDominantScene;
+// ─── Extracted to helpers/narrativeHelpers.js (Phase 1) ──────────────────
+// Wrapper: pre-computes trackedCount (needs extractDetectedCharacterNames which
+// lives here), then delegates to the extracted pure helper.
+function inferNarrativeVisualFocus({ visualText = "", dialogueText = "", panelCharacters = [] }) {
   const combined = `${visualText} ${dialogueText}`.toLowerCase();
-  const envs = detectEnvironmentKeywords(combined);
-  const objs = detectObjectKeywords(combined);
-  const charCount = Array.isArray(panelCharacters) ? panelCharacters.length : 0;
   const trackedCount = extractDetectedCharacterNames(combined).length;
-  const totalChars = Math.max(charCount, trackedCount);
-
-  if (detectGroupScene(combined) || totalChars >= 3) {
-    return "group_scene";
-  }
-
-  if (envs.length && totalChars >= 1) {
-    return "character_in_environment";
-  }
-
-  if (envs.length) {
-    return "environment";
-  }
-
-  if (objs.length && totalChars === 0) {
-    return "object_focus";
-  }
-
-  if (objs.length && totalChars >= 1) {
-    return "character_in_environment";
-  }
-
-  if (detectAbilityKeywords(combined) && totalChars >= 1 && (envs.length || objs.length)) {
-    return "character_in_environment";
-  }
-
-  if (detectAbilityKeywords(combined) && totalChars >= 1) {
-    return totalChars >= 2 ? "two_characters" : "single_character";
-  }
-
-  if (totalChars >= 2) {
-    return "two_characters";
-  }
-
-  if (totalChars === 1) {
-    return "single_character";
-  }
-
-  return null;
+  return _inferNarrativeVisualFocus({ visualText, dialogueText, panelCharacters, trackedCount });
 }
+// ─────────────────────────────────────────────────────────────────────────────
 
-function buildCharacterConsistencyAnchor(character) {
-  const lowerName = String(character?.name || "").toLowerCase();
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildCharacterConsistencyAnchor = _buildCharacterConsistencyAnchor;
 
- let anchor = `
-same character as previous panels,
-same hairstyle,
-same hair length,
-same hair color,
-same face structure,
-same body proportions,
-same core facial identity,
-same silhouette,
-recognizable identity,
-consistent visual identity,
-same exact character,
-no identity drift,
-outfit can adapt to scene context,
-clothing variation allowed if story requires it,
-combat stance variation allowed,
-expression variation allowed,
-pose variation allowed,
-no alternate design,
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildBackViewAnchor = _buildBackViewAnchor;
 
-IF A TECHNIQUE OR SKILL IS ACTIVATED:
-the character MUST visually transform,
-visible aura,
-energy emission,
-light distortion,
-environment reacting to power,
-motion blur or impact effects,
-no static pose allowed,
-no neutral stance allowed,
-the technique state must dominate over the idle state
-`;
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const getDuoType = _getDuoType;
 
-  if (lowerName === "karol") {
-    anchor += `
-Karol Fuentes,
-young elegant woman,
-long straight chestnut brown hair,
-chestnut brown hair only,
-brown hair only,
-never black hair,
-never blonde hair,
-never white hair,
-never blue hair,
-golden brown eyes,
-fair skin,
-slim feminine body,
-refined feminine face,
-recognizable hairstyle,
-same exact character as before,
-same hair color under all lighting,
-same exact hairstyle,
-same exact eye color
-`;
-  }
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildSoloReferencePrompt = _buildSoloReferencePrompt;
 
- if (lowerName === "kelvin") {
-  anchor += `
-Kelvin,
-young man,
-short straight black hair,
-dark eyes,
-masculine face,
-broad shoulders,
-slim masculine body,
-recognizable male silhouette,
-same exact face,
-same hair color,
-same hairstyle,
-same exact character as before,
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildDefaultAbilityProfile = _buildDefaultAbilityProfile;
 
-KELVIN VARIATION RULES:
-keep the same face identity,
-keep the same hairstyle,
-keep the same eye color,
-keep the same masculine build,
-allow different poses,
-allow different camera angles,
-allow different facial expressions,
-allow different action stances,
-allow battle movement,
-allow clothing variation appropriate to the scene,
-allow power stance variation,
-do not freeze Kelvin into a single reference pose,
-do not repeat the exact same composition every time
-`;
-}
-  if (lowerName === "cristian") {
-    anchor += `
-Cristian Uribe,
-young man,
-short dark hair,
-dark hair only,
-strong jawline,
-masculine face,
-broad shoulders,
-slim masculine body,
-recognizable male silhouette,
-same exact character as before
-`;
-  }
-
-  if (lowerName === "mefisto") {
-    anchor += `
-Mefisto,
-female spiritual guide,
-cat ears ALWAYS visible,
-cat ears clearly defined,
-cat ears visible from any angle,
-ears clearly separated from hair,
-no hair covering ears,
-no hidden cat ears,
-no human ears without cat ears,
-long sapphire blue hair,
-blue hair only,
-never black hair,
-never brown hair,
-never blonde hair,
-never white hair,
-emerald green glowing eyes,
-green eyes only,
-ethereal feminine aura,
-spiritual particles,
-mystical female spirit,
-same exact face,
-same exact hairstyle,
-same exact eye color,
-same exact character as before,
-not a generic anime girl,
-no identity drift,
-no alternate design,
-no different character
-`;
-  }
-
-  return anchor;
-}
-
-function buildBackViewAnchor(character) {
-  const lowerName = String(character?.name || "").toLowerCase();
-
-  let anchor = `
-back view,
-seen from behind,
-recognizable from behind,
-same hairstyle visible from behind,
-same clothing visible from behind,
-same body proportions,
-same silhouette,
-hair and outfit must identify the same character,
-`;
-
-  if (lowerName === "karol") {
-    anchor += `
-long chestnut brown hair visible from behind,
-chestnut brown hair only,
-recognizable feminine silhouette,
-same elegant outfit from previous panels,
-same hair color,
-same slim body shape
-`;
-  }
-
-  if (lowerName === "kelvin") {
-    anchor += `
-short black hair visible from behind,
-recognizable masculine silhouette,
-same male outfit from previous panels,
-same slim masculine body
-`;
-  }
-
-  if (lowerName === "cristian") {
-    anchor += `
-short dark hair visible from behind,
-recognizable masculine silhouette,
-same male outfit from previous panels,
-same slim masculine body
-`;
-  }
-
-  if (lowerName === "mefisto") {
-    anchor += `
-long sapphire blue hair visible from behind,
-cat ears clearly visible from behind,
-ears separated from hair,
-recognizable feminine mystical silhouette,
-same ethereal robe design,
-same blue hair color,
-same slim feminine body
-`;
-  }
-
-  return anchor;
-}
-
-function getDuoType(charA, charB) {
-  if (!charA?.gender || !charB?.gender) return null;
-
-  if (charA.gender === "male" && charB.gender === "male") return "male_male";
-  if (charA.gender === "female" && charB.gender === "female") return "female_female";
-
-  return "female_male";
-}
-
-function buildSoloReferencePrompt(character) {
-  const isMefisto = String(character?.name || "").toLowerCase() === "mefisto";
-
-  if (isMefisto) {
-    return `
-solo portrait of Mefisto,
-female spiritual guide,
-cat ears ALWAYS visible,
-cat ears clearly defined,
-cat ears visible from any angle,
-ears clearly separated from hair,
-no hair covering ears,
-long sapphire blue hair,
-blue hair only,
-emerald green glowing eyes,
-green eyes only,
-ethereal mystical aura,
-spiritual particles,
-fantasy spiritual guide,
-elegant mystical robes,
-upper body,
-visible face,
-looking at viewer,
-centered composition,
-neutral mystical background,
-character reference sheet,
-same hairstyle,
-same face,
-same identity,
-recognizable cat-eared female spirit,
-not generic anime girl
-    `.trim();
-  }
-
-  return `
-solo portrait of ${character.name},
-${character.identityPrompt || ""},
-centered composition,
-upper body,
-visible face,
-looking at viewer,
-neutral background,
-character reference sheet,
-same hairstyle,
-same core design,
-recognizable outfit language,
-outfit may adapt to scene context,
-same facial structure,
-same identity,
-recognizable character design
-  `.trim();
-}
-
-function buildDefaultAbilityProfile(cleanName, description = "", stylePreset = "dark_cultivator") {
-  const lowerName = String(cleanName || "").toLowerCase();
-  const text = String(description || "").toLowerCase();
-
-  if (lowerName === "karol") {
-    return {
-      abilityName: "Llama Espiritual Dorada",
-      abilityPrompt: `
-golden spiritual fire,
-flames around the body,
-burning aura,
-glowing embers,
-radiant golden energy,
-elegant but destructive power,
-fire waves expanding outward,
-visible power release
-`.trim(),
-      abilityElements: ["fire", "spirit", "aura"],
-      abilityColor: "golden",
-      abilityVfx: [
-        "flames around the body",
-        "burning aura",
-        "glowing embers",
-        "golden energy waves"
-      ]
-    };
-  }
-
-  if (lowerName === "mefisto") {
-    return {
-      abilityName: "Aura Felina Azul Arcana",
-      abilityPrompt: `
-sapphire blue mystical aura,
-emerald spiritual particles,
-cat-spirit energy,
-ethereal magical glow,
-floating glyphs,
-arcane blue flames,
-mystical summoning presence,
-spiritual power visibly surrounding the body
-`.trim(),
-      abilityElements: ["arcane", "spirit", "summon", "aura"],
-      abilityColor: "sapphire blue",
-      abilityVfx: [
-        "blue mystical aura",
-        "emerald particles",
-        "floating glyphs",
-        "arcane flames"
-      ]
-    };
-  }
-
-  if (lowerName === "cristian") {
-    return {
-      abilityName: "Impacto Oscuro",
-      abilityPrompt: `
-dark violent energy,
-shadow aura,
-black-purple particles,
-explosive power release,
-ominous smoke energy,
-heavy destructive impact,
-shockwave distortion,
-debris thrown outward
-`.trim(),
-      abilityElements: ["dark", "impact", "shadow"],
-      abilityColor: "black-purple",
-      abilityVfx: [
-        "shadow aura",
-        "black-purple particles",
-        "shockwave distortion",
-        "flying debris"
-      ]
-    };
-  }
-
- if (lowerName === "kelvin") {
-  return {
-    abilityName: "Ira del Dios de la Guerra",
-    abilityPrompt: `
-golden battle aura,
-golden flames around the body,
-burning spiritual pressure,
-shockwave release,
-explosive combat energy,
-brutal high-speed attack motion,
-powerful impact distortion,
-war-god presence
-`.trim(),
-    abilityElements: ["fire", "battle", "shockwave", "aura"],
-    abilityColor: "golden",
-    abilityVfx: [
-      "golden flames around the body",
-      "burning spiritual pressure",
-      "shockwave distortion",
-      "explosive combat aura"
-    ]
-  };
-}
-
-  if (text.includes("fuego") || text.includes("fire") || text.includes("llama")) {
-    return {
-      abilityName: "Fuego Espiritual",
-      abilityPrompt: "spiritual fire, flames, burning aura, embers, visible fire power",
-      abilityElements: ["fire", "aura"],
-      abilityColor: "orange-gold",
-      abilityVfx: ["flames", "embers", "burning aura"]
-    };
-  }
-
-  if (text.includes("hielo") || text.includes("ice") || text.includes("frost")) {
-    return {
-      abilityName: "Escarcha Arcana",
-      abilityPrompt: "ice shards, frost aura, cold mist, frozen particles, visible freezing energy",
-      abilityElements: ["ice", "frost"],
-      abilityColor: "icy blue",
-      abilityVfx: ["ice shards", "cold mist", "frozen particles"]
-    };
-  }
-
-  if (text.includes("rayo") || text.includes("lightning") || text.includes("electric")) {
-    return {
-      abilityName: "Descarga Espiritual",
-      abilityPrompt: "lightning arcs, electric aura, charged atmosphere, bright flashes, visible electric attack",
-      abilityElements: ["lightning", "electric"],
-      abilityColor: "electric blue",
-      abilityVfx: ["lightning arcs", "electric aura", "bright flashes"]
-    };
-  }
-
-  return {
-    abilityName: "Aura Espiritual",
-    abilityPrompt: "visible spiritual aura, glowing particles, energy emission, surrounding power waves",
-    abilityElements: ["aura", "spirit"],
-    abilityColor: "white-gold",
-    abilityVfx: ["glowing particles", "energy emission", "power waves"]
-  };
-}
-
-function buildPersistentAbilityBlock(character, panelText = "") {
-  if (!character) return "";
-
-  const text = String(panelText || "").toLowerCase();
-  const hasAbility =
-    detectAbilityKeywords(text) ||
-    text.includes("usa su habilidad") ||
-    text.includes("usó su habilidad") ||
-    text.includes("uso su habilidad") ||
-    text.includes("activo su poder") ||
-    text.includes("activó su poder") ||
-    text.includes("desató su poder") ||
-    text.includes("desato su poder") ||
-    text.includes("liberó su aura") ||
-    text.includes("libero su aura") ||
-    text.includes("release his power") ||
-    text.includes("release her power");
-
-  if (!hasAbility) return "";
-
-  const abilityName = character.abilityName || "Spiritual Ability";
-  const abilityPrompt = character.abilityPrompt || "";
-  const abilityColor = character.abilityColor || "";
-  const abilityVfx = Array.isArray(character.abilityVfx) ? character.abilityVfx.join(", ") : "";
-
-  return `
-PERSISTENT CHARACTER ABILITY:
-${character.name} is using the ability "${abilityName}",
-this character must always express this same signature power style,
-signature color: ${abilityColor},
-signature effects: ${abilityVfx},
-visual ability identity:
-${abilityPrompt},
-
-ABILITY VISUAL RULES:
-the power must be clearly visible,
-the face must remain recognizable while using the technique,
-do not replace identity with generic energy effects,
-the ability must transform the pose and scene composition,
-show technique-specific combat stance,
-show dynamic body movement,
-show scene reaction to the power,
-the character must not look passive,
-show power release, aura, energy emission and impact,
-the environment can react to the power if appropriate,
-keep the same power style across panels,
-do not invent a different random power effect
-`;
-}
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildPersistentAbilityBlock = _buildPersistentAbilityBlock;
 
 async function ensureCharacterReference(character, options = {}) {
   if (!character) return null;
@@ -1495,7 +760,7 @@ async function ensureCharacterReference(character, options = {}) {
     abilityColor: character.abilityColor || "",
     abilityVfx: Array.isArray(character.abilityVfx) ? character.abilityVfx : [],
   };
-
+console.log(payload);
   const refRes = await fetch("http://localhost:8000/generate", {
     method: "POST",
     headers: {
@@ -1522,7 +787,7 @@ async function ensureCharacterReference(character, options = {}) {
   return character;
 }
 
-async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null) {
+export async function buildGenerationPayload(panel, charactersInPanel, panelSeed = null) {
   const normalizedCharacters = dedupeCharacters(charactersInPanel || []);
 
   if (!normalizedCharacters || normalizedCharacters.length === 0) {
@@ -1857,7 +1122,7 @@ function extractPagesWithRegexFallback(content) {
   };
 }
 
-function parseStoryboardJson(content) {
+export function parseStoryboardJson(content) {
   const raw = String(content || "").trim();
 
   const candidates = [];
@@ -2950,9 +2215,6 @@ function extractKnownCharacterNames(text) {
     "mefisto",
     "uryan",
     "juan",
-    "siete",
-    "amanecer",
-    "mapa"
   ];
 
   const found = [];
@@ -3002,9 +2264,6 @@ function prioritizeStoryCharacters(names = [], dialogueText = "", visualText = "
     "Kelvin",
     "Cristian",
     "Mefisto",
-    "Siete",
-    "Amanecer",
-    "Mapa"
   ];
 
   for (const candidate of importantOrder) {
@@ -3099,7 +2358,7 @@ function slugify(text = "") {
     .replace(/(^-|-$)/g, "");
 }
 
-async function uploadMangaImage(base64, mangaTitle, chapterNumber, page, panel) {
+export async function uploadMangaImage(base64, mangaTitle, chapterNumber, page, panel) {
   const safeTitle = slugify(mangaTitle);
   const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -3115,7 +2374,7 @@ async function uploadMangaImage(base64, mangaTitle, chapterNumber, page, panel) 
   return upload.secure_url;
 }
 
-async function generateImage(payload) {
+export async function generateImage(payload) {
   const res = await fetch("http://localhost:8000/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -3131,177 +2390,17 @@ async function generateImage(payload) {
   return data;
 }
 
-function getPanelComposition(panelKind, sceneFocus, storyMode = "tiktok") {
-  const kind = String(panelKind || "").toLowerCase();
-  const isYoutube = storyMode === "youtube";
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const getPanelComposition = _getPanelComposition;
 
-  if (kind === "panoramic_top") {
-    return {
-      camera: isYoutube ? "cinematic wide establishing shot" : "high wide panoramic shot",
-      composition: isYoutube
-        ? `
-epic cinematic wide composition,
-horizontal establishing panel,
-large side breathing room,
-grand scale,
-deep perspective,
-clear left and right spacing,
-landscape dominance,
-small human figures if any
-`
-        : `
-epic panoramic composition,
-top establishing panel,
-very wide environment,
-grand scale,
-deep perspective,
-large background dominance,
-small human figures if any
-`,
-      extra: "environment storytelling, monumental scale"
-    };
-  }
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const isWorldExplanation = _isWorldExplanation;
 
-  if (kind === "dialogue") {
-    return {
-      camera:
-        sceneFocus === "two_characters"
-          ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
-          : sceneFocus === "character_in_environment"
-            ? (isYoutube ? "cinematic medium wide shot" : "medium wide shot")
-            : (isYoutube ? "cinematic medium shot" : "medium shot"),
-      composition: isYoutube
-        ? `
-horizontal dialogue composition,
-clear side spacing,
-balanced character placement,
-readable posing,
-conversation focus,
-clean silhouette,
-safe 16:9 framing
-`
-        : `
-dialogue panel composition,
-clear body separation,
-readable posing,
-balanced framing,
-conversation focus,
-clean silhouette
-`,
-      extra: "character interaction focus"
-    };
-  }
-
-  if (kind === "emotional_closeup") {
-    return {
-      camera: isYoutube ? "cinematic close-up portrait" : "tight close-up portrait",
-      composition: isYoutube
-        ? `
-emotional cinematic close-up,
-face readable with margin,
-eyes emphasized,
-controlled side space,
-minimal background,
-strong emotional readability,
-avoid edge crop
-`
-        : `
-emotional close-up panel,
-face dominant composition,
-eyes emphasized,
-minimal background,
-strong emotional readability
-`,
-      extra: "facial expression focus"
-    };
-  }
-
-  if (kind === "action") {
-    return {
-      camera: isYoutube ? "dynamic cinematic action shot" : "dynamic action angle",
-      composition: isYoutube
-        ? `
-horizontal action composition,
-motion emphasis,
-impact frame,
-dramatic depth,
-side space for movement,
-clear readable staging,
-safe cinematic framing
-`
-        : `
-action panel composition,
-motion emphasis,
-impact frame,
-dramatic foreshortening,
-foreground depth,
-speed lines
-`,
-      extra: "kinetic energy, action storytelling, visible power release, strong impact effects"
-    };
-  }
-
-  return {
-    camera:
-      sceneFocus === "environment"
-        ? (isYoutube ? "cinematic wide shot" : "wide cinematic shot")
-        : sceneFocus === "character_in_environment"
-          ? (isYoutube ? "cinematic medium wide shot" : "medium wide shot")
-          : sceneFocus === "two_characters"
-            ? (isYoutube ? "cinematic two-shot" : "medium two-shot")
-            : sceneFocus === "group_scene"
-              ? (isYoutube ? "cinematic wide group shot" : "wide group shot")
-              : (isYoutube ? "cinematic medium wide shot" : "medium cinematic shot"),
-    composition: isYoutube
-      ? `
-horizontal cinematic composition,
-balanced side margins,
-clear focal point,
-safe 16:9 framing,
-avoid tight edge cropping
-`
-      : `
-cinematic vertical composition,
-balanced framing,
-clear focal point
-`,
-    extra: "manga storytelling composition"
-  };
-}
-
-function isWorldExplanation(text) {
-  const t = String(text || "").toLowerCase();
-
-  return (
-    t.includes("clasificados en rangos") ||
-    t.includes("rango d") ||
-    t.includes("rango s") ||
-    t.includes("subniveles") ||
-    t.includes("sistema de rangos") ||
-    t.includes("aventureros eran clasificados")
-  );
-}
-
-function buildWorldExplanationPrompt(dialogueText, stylePreset, storyMode = "tiktok") {
-  return `
-world explanation panel,
-fantasy information panel,
-adventurer ranking system,
-rank symbols D, C, B, A, S,
-mystical ranking monument,
-spiritual inscriptions,
-guild classification board,
-cultivation hierarchy visualized,
-ancient magical interface,
-clear symbolic worldbuilding,
-${storyMode === "youtube" ? "horizontal cinematic infographic composition," : "vertical infographic composition,"}
-${stylePreset},
-${dialogueText}
-`;
-}
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildWorldExplanationPrompt = _buildWorldExplanationPrompt;
 
 
-function getStoryProfile(contentProfile = "manga_long") {
+export function getStoryProfile(contentProfile = "manga_long") {
   const mode = String(contentProfile || "manga_long").toLowerCase();
 
   if (mode === "youtube") {
@@ -3401,12 +2500,12 @@ function getStoryProfile(contentProfile = "manga_long") {
 `,
     storyboardFormat: "long-form dark seinen manga storyboard",
     defaultPanelTag: "vertical manga panel",
-    targetPages: { min: 18, max: 28 },
-    panelsPerPage: { min: 4, max: 5 }
+    targetPages: { min: 8, max: 12 },
+panelsPerPage: { min: 2, max: 3 }
   };
 }
 
-function buildOpeningHook(title, prompt) {
+export function buildOpeningHook(title, prompt) {
   const raw = String(prompt || "").trim();
 
   if (!raw) {
@@ -3427,7 +2526,36 @@ function splitStoryIntoNarrativeBlocks(prompt = "") {
     .map((x) => x.trim())
     .filter(Boolean);
 }
+export function splitStoryIntoGenerationBlocks(prompt = "", maxWordsPerBlock = 450) {
+  const paragraphs = String(prompt || "")
+    .replace(/\r/g, "\n")
+    .split(/\n{2,}/)
+    .map((x) => x.trim())
+    .filter(Boolean);
 
+  const blocks = [];
+  let current = "";
+  let currentWords = 0;
+
+  for (const paragraph of paragraphs) {
+    const words = countWords(paragraph);
+
+    if (current && currentWords + words > maxWordsPerBlock) {
+      blocks.push(current.trim());
+      current = paragraph;
+      currentWords = words;
+    } else {
+      current = current ? `${current}\n\n${paragraph}` : paragraph;
+      currentWords += words;
+    }
+  }
+
+  if (current.trim()) {
+    blocks.push(current.trim());
+  }
+
+  return blocks.length ? blocks : [prompt];
+}
 function countWords(text = "") {
   return String(text || "")
     .trim()
@@ -3530,7 +2658,7 @@ async function expandStoryboardIfTooShort({
 
   let currentStoryboard = storyboard;
   let attempts = 0;
-  const maxAttempts = 4;
+  const maxAttempts = 1;
 
   while (attempts < maxAttempts) {
     const currentPages = Array.isArray(currentStoryboard?.pages)
@@ -3571,13 +2699,18 @@ Return ONLY valid JSON with this exact structure:
           "panelKind":"panoramic_top | dialogue | emotional_closeup | action | standard",
           "viewAngle":"front | profile | back",
           "animation": {
-            "camera":"slow_push | fast_zoom | side_pan | vertical_pan | impact_zoom | orbit_feel",
-            "motion":"idle | dialogue | tension | action | burst | reveal | environment_drift",
-            "transition":"fade | cut | flash | blur_cut",
-            "frameHint":"single | multi_3 | multi_5",
-            "duration":1.8,
-            "intensity":0.35
-          }
+  "camera":"slow_push | fast_zoom | side_pan | vertical_pan | impact_zoom | orbit_feel",
+  "motion":"idle | dialogue | tension | action | burst | reveal | environment_drift",
+  "transition":"fade | cut | flash | blur_cut",
+  "frameHint":"single | multi_3 | multi_5",
+  "duration":1.8,
+  "intensity":0.35
+},
+"directorIntent":"",
+"emotionalBeat":"",
+"visualPriority":"low | medium | high",
+"veoCandidate":false,
+"veoPrompt":""
         }
       ]
     }
@@ -3623,6 +2756,105 @@ ${JSON.stringify(currentStoryboard).slice(0, 22000)}
   return currentStoryboard;
 }
 
+export async function rewriteStoryAsMangaDirector({
+  title,
+  safePrompt,
+  storyProfile,
+  previousPages = [],
+  openingHook,
+}) {
+  const directorPrompt = `
+You are a professional dark seinen manga screenwriter and storyboard director.
+
+Your job is NOT to summarize.
+Your job is to adapt the source story into clear manga beats before storyboard generation.
+
+Return ONLY valid JSON.
+
+{
+  "adaptedStory": "",
+  "mustShow": [],
+  "visualContinuity": [],
+  "emotionalProgression": [],
+  "keyObjects": [],
+  "keyLocations": [],
+  "keyCharacters": [],
+  "forbiddenMistakes": []
+}
+
+RULES:
+- Preserve the full story.
+- Do not remove important events.
+- Do not invent a different plot.
+- Keep the same order of events.
+- Break the story into visual manga beats.
+- Mark important scenes that MUST appear visually.
+- Mark objects, locations, powers, rewards, missions, alchemy, meditation, combat and final narration if present.
+- Preserve emotional conflict and consequence.
+- Keep continuity with previous pages.
+- Avoid vague panels.
+- Avoid symbolic replacement when the scene needs literal objects.
+- If the story mentions a sect, tower, arena, portal, altar, weapon, beast, pill, reward or ability, it must be listed in mustShow.
+- The ending must be preserved.
+
+Manga title:
+${title}
+
+Storyboard format:
+${storyProfile.storyboardFormat}
+
+Opening hook:
+${openingHook}
+
+Previous pages:
+${previousPages.length ? JSON.stringify(previousPages).slice(0, 5000) : "[]"}
+
+Original story:
+${safePrompt}
+`;
+
+  const res = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.15,
+    messages: [{ role: "user", content: directorPrompt }],
+  });
+
+  const raw = res.choices[0].message.content;
+
+  try {
+    const parsed = JSON.parse(extractFirstJsonObject(raw));
+
+    return {
+      adaptedStory: String(parsed.adaptedStory || safePrompt),
+      mustShow: Array.isArray(parsed.mustShow) ? parsed.mustShow : [],
+      visualContinuity: Array.isArray(parsed.visualContinuity)
+        ? parsed.visualContinuity
+        : [],
+      emotionalProgression: Array.isArray(parsed.emotionalProgression)
+        ? parsed.emotionalProgression
+        : [],
+      keyObjects: Array.isArray(parsed.keyObjects) ? parsed.keyObjects : [],
+      keyLocations: Array.isArray(parsed.keyLocations) ? parsed.keyLocations : [],
+      keyCharacters: Array.isArray(parsed.keyCharacters) ? parsed.keyCharacters : [],
+      forbiddenMistakes: Array.isArray(parsed.forbiddenMistakes)
+        ? parsed.forbiddenMistakes
+        : [],
+    };
+  } catch (err) {
+    console.warn("⚠️ Director manga falló, usando historia original:", err.message);
+
+    return {
+      adaptedStory: safePrompt,
+      mustShow: [],
+      visualContinuity: [],
+      emotionalProgression: [],
+      keyObjects: [],
+      keyLocations: [],
+      keyCharacters: [],
+      forbiddenMistakes: [],
+    };
+  }
+}
 
 export async function POST(req) {
   try {
@@ -3647,26 +2879,28 @@ export async function POST(req) {
     const baseStyleSeed = generateStyleSeed(title);
     const storyProfile = getStoryProfile(contentProfile);
     const openingHook = buildOpeningHook(title, prompt);
+    const mangaDirector = await rewriteStoryAsMangaDirector({
+  title,
+  safePrompt,
+  storyProfile,
+  previousPages,
+  openingHook,
+});
 
     if (!prompt) {
       throw new Error("Prompt vacío");
     }
 
-    const forceLongChapter = `
-LONG CHAPTER COMPLETION RULES:
-- This chapter contains multiple major events.
-- Never stop in the middle of the chapter.
-- The ending must always be included.
-- If the story contains alchemy, missions, combat, rewards, meditation or spiritual connection, each must appear.
-- Minimum pages for this kind of chapter: 18.
-- Minimum total panels: 70.
-- The final panels must adapt the last paragraph of the source text.
-`;
+   const storyBlocks = splitStoryIntoGenerationBlocks(safePrompt, 450);
 
-    const scriptPrompt = `
+let allPages = [];
+let continuityPages = previousPages || [];
+
+for (let blockIndex = 0; blockIndex < storyBlocks.length; blockIndex++) {
+  const blockPrompt = `
 Generate a dark seinen manga storyboard for ${storyProfile.storyboardFormat}.
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY valid JSON.
 
 {
   "pages":[
@@ -3688,115 +2922,71 @@ Return ONLY valid JSON with this exact structure:
             "frameHint":"single | multi_3 | multi_5",
             "duration":1.8,
             "intensity":0.35
-          }
+          },
+          "directorIntent":"",
+          "emotionalBeat":"",
+          "visualPriority":"low | medium | high",
+          "veoCandidate":false,
+          "veoPrompt":""
         }
       ]
     }
   ]
 }
 
-STRICT JSON RULES:
-- Return strictly valid JSON.
-- Do not include markdown.
-- Do not include explanation text before or after JSON.
-- Do not use trailing commas.
-- Escape all quotes inside strings properly.
-- The response must be parseable by JavaScript JSON.parse().
-- Never use unescaped double quotes inside dialogue or imagePrompt.
-- Replace quotes in dialogue with single quotes.
-- Do not include line breaks inside JSON string values.
-
-STORYBOARD LENGTH RULES:
-- The chapter MUST be expanded into a full manga sequence.
-- Generate between ${storyProfile.targetPages.min} and ${storyProfile.targetPages.max} pages.
-- Each page should usually contain between ${storyProfile.panelsPerPage.min} and ${storyProfile.panelsPerPage.max} panels.
-- If the source chapter contains many events, use more pages rather than compressing events.
-- NEVER reduce an entire long chapter to only a few pages unless the source text is genuinely short.
-- NEVER merge multiple major story beats into one single panel.
-- Every major narrative event must appear visually.
-- Every transition that matters emotionally or narratively must appear visually.
-- This is NOT a short recap.
-- For long chapters, prefer 15+ pages.
-- NEVER skip setup, reaction, explanation, training, transition or consequence.
-- If the result is below 10 pages for a long chapter, it is too compressed and must be expanded.
-
-MANDATORY PANEL RULES:
-- dialogue is REQUIRED in every panel.
-- Never return empty dialogue.
+RULES:
+- This is block ${blockIndex + 1} of ${storyBlocks.length}.
+- Adapt ONLY CURRENT BLOCK.
+- Do not jump ahead.
+- Do not restart the story.
+- Keep continuity with previous pages.
+- Generate 3 to 5 pages for this block.
+- Each page should contain 2 to 3 panels.
+- Every panel must visually match its dialogue.
 - imagePrompt must describe ONLY what is visible.
-- characters must include only the characters that should appear in that panel.
-- Every panel must include an animation object.
-- action panels should prefer frameHint="multi_5".
-- dialogue panels should prefer frameHint="multi_3" or "single".
-- environment panels should prefer camera="vertical_pan" or "slow_push".
-- ability or transformation scenes should prefer motion="burst".
-- combat scenes should prefer camera="impact_zoom" or "fast_zoom".
-- environment scenes should not feel like a static face close-up.
-- creature panels should visually prioritize the creature.
-- Keep visual continuity.
-- Every panel must advance story + text together.
+- characters must include only characters visible in the panel.
+- Environment panels must use characters: [].
+- Object panels must use characters: [].
+- If the text describes towers, objects, cities, crowds, portals or environment, do NOT force Kelvin or another character unless the text says he is visible.
+- Important cinematic scenes may use veoCandidate=true.
+- veoPrompt must describe motion only.
+- Return valid JSON only. No markdown.
 
-ADAPTATION RULES:
-- If several sects are introduced, prefer visualizing them through banners, emblems, sigils, ceremonial flags or floating symbols.
-- Do not default to a human representative when sect identity can be shown symbolically.
-- Sect introductions should prioritize heraldry, insignias and faction symbols over portraits.
-- Adapt the source chapter faithfully.
-- Break paragraphs into multiple sequential visual beats.
-- A scene with setup, reaction, action and consequence should usually become multiple panels.
-- Worldbuilding explanations should become visual sequences, not one compressed panel.
-- Training montages should use multiple panels if the text describes repeated effort or passage of time.
-- Tournament announcements, crowd reaction, rules explanation, key rivals, teleportation and arrival at a dangerous location should not be skipped.
-- If a new enemy or beast is revealed, give that reveal proper buildup.
+Previous pages continuity:
+${continuityPages.length ? JSON.stringify(continuityPages).slice(0, 6000) : "[]"}
 
-DIALOGUE PRESERVATION RULES:
-- Dialogue must NOT be overly shortened.
-- Keep important explanations complete.
-- Do not reduce narration to 3-5 words unless the scene truly demands brevity.
-- Preserve system messages, tournament rules, training narration and emotional lines.
-- Long dialogue can be split across multiple panels instead of being cut down.
+DIRECTOR CONTEXT:
+${mangaDirector.adaptedStory}
 
-Platform storytelling rules:
-${storyProfile.dialogueRule}
-${storyProfile.panelRule}
+MUST SHOW:
+${mangaDirector.mustShow.map((x) => `- ${x}`).join("\n")}
 
-Visual framing rules:
-${storyProfile.imageRule}
-
-Mandatory hook rule:
-- The first panel must immediately create curiosity, danger, mystery, emotional tension or shock.
-- The first panel dialogue should feel like a hook, not like neutral exposition.
-- Use this hook idea as inspiration for the opening beat: "${openingHook}"
-
-Continuity rules:
-- Respect previous pages so the story does not restart.
-- Maintain emotional continuity and conflict progression.
-- Do not contradict prior panels.
-
-Previous pages:
-${previousPages.length ? JSON.stringify(previousPages).slice(0, 5000) : "[]"}
-
-${forceLongChapter}
-
-Story request:
-${safePrompt}
+CURRENT BLOCK:
+${storyBlocks[blockIndex]}
 `;
-    const scriptRes = await client.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.2,
-      messages: [{ role: "user", content: scriptPrompt }]
-    });
 
-   const script = scriptRes.choices[0].message.content;
-let storyboard = parseStoryboardJson(script);
+  const blockRes = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.2,
+    messages: [{ role: "user", content: blockPrompt }],
+  });
 
-storyboard = await expandStoryboardIfTooShort({
-  storyboard,
-  title,
-  safePrompt,
-  storyProfile,
-  previousPages,
-  openingHook
-});
+  const blockStoryboard = parseStoryboardJson(blockRes.choices[0].message.content);
+  const blockPages = Array.isArray(blockStoryboard.pages)
+    ? blockStoryboard.pages
+    : [];
+
+  allPages.push(...blockPages);
+
+  continuityPages = [...continuityPages, ...blockPages].slice(-6);
+}
+
+let storyboard = {
+  pages: allPages.map((page, index) => ({
+    ...page,
+    page: index + 1,
+  })),
+};
 
 if (!storyboard?.pages || !Array.isArray(storyboard.pages)) {
   throw new Error("El storyboard JSON no contiene un array válido en 'pages'.");
@@ -3804,12 +2994,14 @@ if (!storyboard?.pages || !Array.isArray(storyboard.pages)) {
 
 const pages = storyboard.pages;
 
-    for (const page of pages) {
-      for (const panel of page.panels || []) {
-        panel.type = panel.type || "narration";
-        panel.dialogue = String(panel.dialogue || "").trim();
-        panel.imagePrompt = String(panel.imagePrompt || "").trim();
-        panel.characters = Array.isArray(panel.characters) ? panel.characters : [];
+   for (const page of pages) {
+  for (const panel of page.panels || []) {
+    panel.type = panel.type || "narration";
+    panel.dialogue = String(panel.dialogue || "").trim();
+    panel.imagePrompt = String(panel.imagePrompt || "").trim();
+    panel.characters = Array.isArray(panel.characters) ? panel.characters : [];
+
+    forceLiteralEnvironmentPrompt(panel);
         panel.viewAngle = panel.viewAngle || detectViewAngle(panel.imagePrompt || "");
 
         if (!panel.dialogue) {
@@ -4976,6 +4168,34 @@ cinematic scene
 
         panel.imageUrl = imageUrl;
 panel.animation = payload.animation || panel.animation || getDefaultPanelAnimation(panel);
+panel.directorIntent = String(panel.directorIntent || "").trim();
+panel.emotionalBeat = String(panel.emotionalBeat || "").trim();
+panel.visualPriority = String(panel.visualPriority || "medium").trim();
+
+if (typeof panel.veoCandidate !== "boolean") {
+  panel.veoCandidate = false;
+}
+
+panel.veoPrompt = String(panel.veoPrompt || "").trim();
+
+if (!panel.directorIntent) {
+  panel.directorIntent = "Clear manga storytelling beat.";
+}
+
+if (!panel.emotionalBeat) {
+  panel.emotionalBeat = "tension";
+}
+
+if (!panel.veoPrompt && panel.veoCandidate) {
+  panel.veoPrompt = `
+Animate this manga panel with subtle cinematic motion.
+Keep the same character identity, same outfit, same composition and same dark seinen manga style.
+Move aura particles, hair, clothing and camera slightly.
+Do not add new characters.
+Do not change the face.
+Do not change the scene.
+`.trim();
+}
 panel.generatedFrames = Array.isArray(imageResult.frames) ? imageResult.frames : [];
 panel.renderMeta = {
   steps: imageResult.steps,
@@ -4986,12 +4206,33 @@ panel.renderMeta = {
         panelIndex++;
       }
     }
+    const veoExport = [];
+
+for (const page of pages) {
+  for (const [index, panel] of (page.panels || []).entries()) {
+    if (!panel.veoCandidate) continue;
+
+    veoExport.push({
+      page: page.page,
+      panel: index + 1,
+      dialogue: panel.dialogue || "",
+      image: panel.image || panel.imageUrl || "",
+      imagePrompt: panel.imagePrompt || "",
+      veoPrompt: panel.veoPrompt || "",
+      animation: panel.animation || null,
+      visualPriority: panel.visualPriority || "medium",
+      emotionalBeat: panel.emotionalBeat || "",
+      manualVideoUrl: ""
+    });
+  }
+}
 
     return NextResponse.json({
       title,
       storyMode: storyProfile.mode,
       contentProfile,
-      pages
+      pages,
+      veoExport
     });
   } catch (err) {
     console.error(err);
@@ -5002,254 +4243,1025 @@ panel.renderMeta = {
   }
 }
 
-function shouldForceFaceView(dialogueText, visualText, panelCharacters = []) {
-  const d = String(dialogueText || "").toLowerCase();
-  const v = String(visualText || "").toLowerCase();
-  const chars = (panelCharacters || []).map(c => String(c).toLowerCase());
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const shouldForceFaceView = _shouldForceFaceView;
 
-  const mentionsImportantCharacter =
-    chars.includes("karol") ||
-    chars.includes("kelvin") ||
-    chars.includes("cristian") ||
-    chars.includes("mefisto") ||
-    d.includes("karol") ||
-    d.includes("kelvin") ||
-    d.includes("cristian") ||
-    d.includes("mefisto") ||
-    v.includes("karol") ||
-    v.includes("kelvin") ||
-    v.includes("cristian") ||
-    v.includes("mefisto");
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildPersonalityBlock = _buildPersonalityBlock;
 
-  const isDialogueMoment =
-    d.length > 0 &&
-    !d.includes("clasificados en rangos") &&
-    !d.includes("sistema de rangos");
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildStylePreset = _buildStylePreset;
 
-  const explicitlyWalkingAway =
-    v.includes("walking away") ||
-    v.includes("from behind") ||
-    v.includes("seen from behind") ||
-    v.includes("de espaldas") ||
-    v.includes("espalda");
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+export const getMangaStyle = _getMangaStyle;
 
-  return mentionsImportantCharacter && isDialogueMoment && !explicitlyWalkingAway;
-}
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const detectSceneType = _detectSceneType;
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const detectCreatureKeywords = _detectCreatureKeywords;
+const buildCreatureDetails = _buildCreatureDetails;
 
-function buildPersonalityBlock(personality, archetype) {
-  personality = personality?.toLowerCase() || "";
-  archetype = archetype?.toLowerCase() || "";
 
-  if (personality.includes("cold") || archetype.includes("strategist")) {
-    return "cold calculating gaze, restrained expression, calm dominant posture";
+// ─── Phase 2: extracted to prompts/ module ───────────────────────────────
+const buildTechniqueVariationBlock = _buildTechniqueVariationBlock;
+
+// \u2500\u2500\u2500 Extracted to helpers/worldModeHelpers.js (Phase 1) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Re-exported with the same names so external importers (storyboard/route.js, etc.)
+// continue to work without any changes.
+export const inferWorldMode = _inferWorldMode;
+export const buildWorldModeStylePreset = _buildWorldModeStylePreset;
+// \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+
+/**
+ * Exported function: generates image for a single panel.
+ * Used by /api/manga/generate-panel-image endpoint.
+ *
+ * @param {object} options
+ * @param {object} options.panel - Panel data (imagePrompt, dialogue, characters, sceneFocus, panelKind, viewAngle, animation, worldMode, ...)
+ * @param {string} options.title - Manga title
+ * @param {number} options.chapterNumber
+ * @param {number} options.pageNumber
+ * @param {number} options.panelIndex - 1-based panel index
+ * @param {string} options.contentProfile
+ * @returns {Promise<{imageUrl, finalPrompt, generatedFrames, renderMeta}>}
+ */
+export async function generateSinglePanelImage({
+  panel,
+  title,
+  chapterNumber = 1,
+  pageNumber = 1,
+  panelIndex = 1,
+  contentProfile = "tiktok",
+}) {
+  const storyProfile = getStoryProfile(contentProfile);
+  const globalStylePreset = getMangaStyle(title);
+  const baseStyleSeed = generateStyleSeed(title);
+  const panelSeed = baseStyleSeed + pageNumber * 100 + panelIndex;
+
+  const visualText = String(panel.imagePrompt || "").trim();
+  const dialogueText = String(panel.dialogue || "").trim();
+  const combinedPanelText = `${visualText} ${dialogueText}`;
+
+  const hasAbility = detectAbilityKeywords(combinedPanelText);
+  const abilityDetails = buildAbilityDetails(combinedPanelText);
+  const creatureDetails = buildCreatureDetails(combinedPanelText);
+  const hasCreatures = detectCreatureKeywords(combinedPanelText).length > 0;
+
+  const sectBannerBlock = hasSectBannerFocus(combinedPanelText)
+    ? `
+SECT BANNER VISUAL RULES:
+show the sect as a banner, flag, sigil, emblem, crest or ceremonial standard,
+do not default to a random character portrait,
+the sect identity must be represented visually through symbols,
+the symbol must be readable and iconic,
+if multiple sects are mentioned, show multiple banners or emblems in the scene,
+prioritize heraldry, insignias, ritual standards and symbolic identity,
+${buildSectBannerDetails(combinedPanelText)}
+`
+    : "";
+
+  // group_scene and world_explanation never get ability rules
+  // Use panel.sceneFocus directly here since manualSceneFocus is declared below.
+  const panelSceneFocusRaw = String(panel.sceneFocus || "").trim().toLowerCase();
+  const abilityPromptBlock =
+    hasAbility &&
+    panelSceneFocusRaw !== "group_scene" &&
+    panelSceneFocusRaw !== "world_explanation" &&
+    !isWorldExplanation(combinedPanelText)
+      ? `
+ABILITY VISUAL RULES:
+the character is actively using a visible ability,
+the power must be clearly visible,
+the ability must dominate the visual storytelling,
+no passive idle pose,
+show action, motion and energy emission,
+show impact on the environment if appropriate,
+visual effects must match the described power,
+${abilityDetails}
+`
+      : "";
+
+
+  const rawPanelNames = Array.isArray(panel.characters) ? panel.characters : [];
+  const inferredNames = await extractDetectedCharacterNamesForTitle(
+    title,
+    `${visualText} ${dialogueText}`
+  );
+
+  let combinedNames = [...rawPanelNames, ...inferredNames]
+    .map((n) => canonicalizeCharacterName(n))
+    .filter(Boolean);
+  combinedNames = dedupeCanonicalNames(combinedNames);
+  const uniqueDetected = dedupeCanonicalNames(combinedNames);
+
+  const forcedImportant = combinedNames.filter((n) =>
+    LOCKED_CHARACTER_NAMES.some(
+      (locked) =>
+        locked.toLowerCase() === canonicalizeCharacterName(n).toLowerCase()
+    )
+  );
+
+  const strongTwoCharacterScene = isStrongTwoCharacterScene(
+    dialogueText,
+    visualText
+  );
+
+  const panelCharacters = Array.isArray(panel.characters)
+    ? panel.characters
+    : [];
+  const combinedSceneText = `${visualText} ${dialogueText}`;
+
+  const environmentDominant = isEnvironmentDominantScene(combinedSceneText);
+  const creatureDominant = isCreatureDominantScene(combinedSceneText);
+  const objectDominant =
+    isObjectDominantScene(combinedSceneText) ||
+    hasSectBannerFocus(combinedSceneText);
+
+  // --- sceneFocus resolution ---
+  // If the panel has an explicit sceneFocus (set manually in admin or by the storyboard),
+  // it takes ABSOLUTE priority over any keyword-based heuristic.
+  const manualSceneFocus = String(panel.sceneFocus || "").trim().toLowerCase();
+
+  let sceneFocus = manualSceneFocus ||
+    inferNarrativeVisualFocus({
+      visualText,
+      dialogueText,
+      panelCharacters: panel.characters,
+    }) ||
+    inferSceneFocusFromNames(panel.characters, visualText, dialogueText) ||
+    detectSceneType(visualText);
+
+  // Keyword-based overrides — ONLY apply when no manual sceneFocus was provided.
+  // This prevents creatureDominant from hijacking a deliberate "group_scene",
+  // "environment", or any other manually chosen focus.
+  if (!manualSceneFocus) {
+    if (creatureDominant) sceneFocus = "creature_focus";
+    else if (environmentDominant) sceneFocus = "environment";
+    else if (objectDominant) sceneFocus = "object_focus";
+
+    if (
+      !environmentDominant &&
+      !objectDominant &&
+      !creatureDominant &&
+      uniqueDetected.length >= 2 &&
+      strongTwoCharacterScene
+    ) {
+      sceneFocus = "two_characters";
+    }
+
+    if (
+      sceneFocus === "environment" &&
+      !environmentDominant &&
+      uniqueDetected.length >= 1
+    ) {
+      sceneFocus = "character_in_environment";
+    }
+
+    if (
+      sceneFocus === "environment" &&
+      !environmentDominant &&
+      hasCharacterPresence(visualText, panelCharacters)
+    ) {
+      sceneFocus = "character_in_environment";
+    }
+  }
+   // creaturePromptBlock is ONLY populated when the resolved sceneFocus is "creature_focus".
+  // Even when dialogue mentions monsters/enemies, other scene types (group_scene, environment,
+  // two_characters, etc.) must never receive CREATURE VISUAL RULES or CREATURE DETAILS.
+  const creaturePromptBlock =
+    sceneFocus === "creature_focus" && hasCreatures
+      ? `
+CREATURE VISUAL RULES:
+if the prompt mentions goblin or goblin lord, show a monster, not a human,
+enemy must be non-human,
+do not replace monsters with anime girls,
+do not feminize monsters,
+goblin lord must look brutal, monstrous and male-coded if described as such,
+NON-HUMAN CREATURE:
+grotesque anatomy,
+asymmetrical face,
+deformed proportions,
+monstrous skin texture,
+non-beautiful,
+non-human facial structure,
+avoid anime human face,
+creature must look threatening and unnatural
+
+CREATURE DETAILS:
+${creatureDetails}
+`
+      : "";
+
+  let viewAngle = panel.viewAngle || detectViewAngle(visualText);
+
+  if (shouldForceFaceView(dialogueText, visualText, panelCharacters)) {
+    if (
+      sceneFocus !== "environment" &&
+      sceneFocus !== "character_in_environment" &&
+      sceneFocus !== "object_focus" &&
+      sceneFocus !== "group_scene"
+    ) {
+      viewAngle = "front";
+    }
   }
 
-  if (personality.includes("friendly") || archetype.includes("hero")) {
-    return "confident smile, warm eyes, upright posture";
+  const panelKind = panel.panelKind || "standard";
+  const baseStylePreset = buildStylePreset(globalStylePreset);
+
+  // Resolve worldMode: use panel value, infer from text, or fall back to "auto"
+  const resolvedWorldMode =
+    panel.worldMode && panel.worldMode !== "auto"
+      ? panel.worldMode
+      : inferWorldMode(dialogueText, visualText);
+
+  // Build style preset adapted to worldMode
+  const stylePreset = buildWorldModeStylePreset(
+    resolvedWorldMode,
+    baseStylePreset,
+    storyProfile.mode
+  );
+
+  if (!manualSceneFocus && isWorldExplanation(dialogueText)) {
+    sceneFocus = "world_explanation";
   }
 
-  if (personality.includes("aggressive")) {
-    return "intense stare, tense posture, fierce expression";
+  const composition = getPanelComposition(panelKind, sceneFocus, storyProfile.mode);
+
+  let charactersData = [];
+
+  if (
+    sceneFocus !== "environment" &&
+    sceneFocus !== "object_focus" &&
+    sceneFocus !== "creature_focus" &&
+    sceneFocus !== "group_scene" &&     // group_scene is pure txt2img — no character references needed
+    sceneFocus !== "world_explanation"  // world_explanation is pure infographic — no characters
+  ) {
+    let names = [];
+
+    if (uniqueDetected.length > 0) {
+      names = [...uniqueDetected];
+    } else if (Array.isArray(panelCharacters) && panelCharacters.length > 0) {
+      names = panelCharacters;
+    } else {
+      names = extractDetectedCharacterNames(`${visualText} ${dialogueText}`);
+    }
+
+    names = prioritizeStoryCharacters(names, dialogueText, visualText);
+    const existingCharacters = await findCharactersByNames(title, names);
+    const existingNamesSet = new Set(
+      existingCharacters.map((c) => normalizeNameLower(c.name))
+    );
+
+    names = names.filter((n) => {
+      const lower = normalizeNameLower(n);
+      if (isBannedGenericCharacterName(lower)) return false;
+      return (
+        DETECTABLE_CHARACTER_NAMES.some((x) => x.toLowerCase() === lower) ||
+        existingNamesSet.has(lower)
+      );
+    });
+
+    if (forcedImportant.length >= 2) {
+      names = [
+        ...forcedImportant,
+        ...names.filter((n) => !forcedImportant.includes(n)),
+      ];
+    }
+
+    const limit =
+      sceneFocus === "group_scene"
+        ? 2
+        : sceneFocus === "two_characters"
+        ? 2
+        : 1;
+    const uniqueNames = dedupeNames(names).slice(0, limit);
+
+    for (const rawName of uniqueNames) {
+      const name = normalizeName(rawName);
+      if (!name) continue;
+      if (isBannedGenericCharacterName(name)) continue;
+
+      let character = await findCharacter(title, name);
+
+      if (!character) {
+        character = await createOrUpdateCharacter(
+          title,
+          name,
+          `${visualText}\n${dialogueText}`,
+          globalStylePreset
+        );
+      } else if (
+        (!character.referenceImage || !character.identityPrompt) &&
+        (character.profileVersion || 1) < CURRENT_PROFILE_VERSION
+      ) {
+        character = await createOrUpdateCharacter(
+          title,
+          name,
+          `${visualText}\n${dialogueText}`,
+          globalStylePreset
+        );
+      }
+
+      if (!character) continue;
+
+      character = await ensureCharacterReference(character);
+      charactersData.push(character);
+    }
+
+    charactersData = dedupeCharacters(charactersData);
   }
 
-  return "neutral expression, balanced posture";
-}
+  if (sceneFocus === "two_characters" && charactersData.length < 2) {
+    sceneFocus = "single_character";
+  }
 
-function buildStylePreset(style) {
-  if (!style) return "";
+  if (sceneFocus === "single_character" && charactersData.length > 1) {
+    const preferredSingleName =
+      uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
+      uniqueDetected[0] ||
+      null;
+    const preferredSingleCharacter = preferReferenceCharacter(
+      charactersData,
+      preferredSingleName
+    );
+    charactersData = preferredSingleCharacter
+      ? [preferredSingleCharacter]
+      : charactersData.slice(0, 1);
+  }
 
-  if (style === "dark_cultivator") {
-    return `
-xianxia cultivation world,
-martial cultivator aesthetic,
-ancient eastern fantasy,
-cultivator robes,
-spiritual aura,
-mystical energy,
-floating debris,
-dark wuxia atmosphere,
-seinen manga tone,
-dramatic lighting,
-epic scale
+  const framingTag = storyProfile.defaultPanelTag;
+  const extraFramingRules =
+    storyProfile.mode === "youtube"
+      ? `
+horizontal cinematic framing,
+16:9 safe composition,
+important subjects centered,
+leave space on left and right,
+avoid close crop,
+avoid face near edges,
+avoid cutting head or body,
+wide readable staging
+`
+      : `
+vertical mobile framing,
+strong central composition,
+close readable focus,
+portrait-friendly staging
+`;
+
+  // --- Build finalPrompt (same logic as in the main POST loop) ---
+  let finalPrompt = "";
+
+  if (sceneFocus === "world_explanation" || isWorldExplanation(dialogueText)) {
+    // Force sceneFocus to world_explanation for consistency
+    sceneFocus = "world_explanation";
+    finalPrompt = buildWorldExplanationPrompt(dialogueText, storyProfile.mode);
+  } else if (sceneFocus === "environment") {
+    const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
+
+    // Strip character-focused terms from the style preset for environment panels
+    const environmentStylePreset = stylePreset
+      .replace(/cultivator robes,?\s*/gi, "")
+      .replace(/martial cultivator aesthetic,?\s*/gi, "")
+      .replace(/portrait-friendly staging,?\s*/gi, "")
+      .replace(/close readable focus,?\s*/gi, "");
+
+    // Environment panels need wide landscape framing, not portrait/mobile framing
+    const environmentFramingRules =
+      storyProfile.mode === "youtube"
+        ? `
+horizontal cinematic framing,
+16:9 safe composition,
+wide landscape composition,
+panoramic establishing shot,
+leave generous space for architecture and environment,
+avoid any face crop,
+avoid character close-up,
+wide readable staging
+`
+        : `
+vertical wide framing,
+grand establishing shot,
+environment dominates the full frame,
+no portrait crop,
+no character focus,
+panoramic storytelling
+`;
+
+    // Explicit negatives for environment panels
+    const environmentNegatives = `
+NEGATIVES — DO NOT GENERATE:
+anime girl,
+anime woman,
+anime portrait,
+portrait,
+close-up face,
+single character portrait,
+character focus,
+solo character,
+face close-up,
+random cultivator portrait,
+random anime girl,
+no character as main subject
+`;
+
+    finalPrompt = `
+ENVIRONMENT DOMINANT PANEL,
+the place is the main subject — NOT a character,
+do not reduce the panel to a portrait,
+do not add a random anime girl or character in the foreground,
+show the location clearly,
+show architecture clearly,
+show narrative objects if mentioned,
+wide shot,
+establishing shot preferred,
+architecture and worldbuilding are the visual priority,
+
+${environmentStylePreset},
+
+ENVIRONMENT FOCUS RULES:
+prioritize architecture over character,
+prioritize worldbuilding over portrait,
+prioritize cityscape over face,
+prioritize towers, buildings, landscapes, atmosphere,
+environment storytelling,
+epic scale,
+grand scenery,
+
+SCENE:
+${visualText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+${sceneFocus === "environment" && (resolvedWorldMode === "cultivation_world" || resolvedWorldMode === "auto") ? sectBannerBlock : ""}
+${creaturePromptBlock}
+
+${abilityPromptBlock}
+
+GROUP ATMOSPHERE:
+${crowdSupport}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${environmentFramingRules},
+
+${resolvedWorldMode === "modern_world" ? `
+city environment storytelling,
+high detail modern background,
+urban cinematic atmosphere,
+contemporary city landscape,
+modern infrastructure clearly visible,
+must visually represent the narrative described,
+if the story mentions buildings, show modern buildings,
+if the story mentions screens or TVs, show them,
+if the story mentions streets, show modern streets,
+if the story mentions crowds, show modern people in contemporary clothing
+` : resolvedWorldMode === "tower_emergence" ? `
+apocalyptic cityscape,
+modern city streets below,
+ancient colossal towers erupting from the ground,
+world-scale supernatural event,
+spiritual energy pillars,
+blue energy beams from towers,
+dramatic scale contrast: modern buildings vs ancient towers,
+must visually represent the narrative described,
+if the story mentions a tower, the tower must be visible and enormous,
+if the story mentions lights or beams, they must be visible
+` : resolvedWorldMode === "inside_tower" ? `
+tower interior storytelling,
+high detail dungeon background,
+mystical atmospheric lighting,
+ancient rune-covered walls,
+dark fantasy dungeon aesthetic,
+must visually represent the narrative described,
+if the story mentions a monster, the monster must be visible,
+if the story mentions a portal or door, it must be visible,
+if the story mentions traps or trials, they must be visible
+` : `
+cinematic landscape,
+high detail background,
+dark mystical atmosphere,
+ancient colossal towers,
+world-scale architecture,
+spiritual worldbuilding,
+must visually represent the narrative described,
+if the story mentions a tower, the tower must be visible,
+if the story mentions a sect, the sect architecture must be visible,
+if the story mentions an arena, the arena must be visible,
+if the story mentions lights, they must be visible,
+if the story mentions a weapon or altar, it must be visible
+`}
+
+${environmentNegatives}
+`;
+  } else if (sceneFocus === "object_focus") {
+    const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+
+    finalPrompt = `
+object-focused narrative panel,
+important object must dominate the frame,
+no unnecessary face close-up,
+no human portrait,
+no character as main focus,
+show the relevant item clearly,
+show surrounding setting if needed,
+if a sect is mentioned, prioritize banner, sigil, emblem, crest or ceremonial flag,
+if multiple sects are mentioned, show multiple banners or floating emblems,
+no random elegant woman,
+no random cultivator portrait,
+symbolic faction identity only,
+
+${stylePreset},
+
+SCENE:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+${combinedPanelText.toLowerCase().includes("loto")
+  ? `
+LOTUS SCENE RULES:
+sacred spiritual lotus,
+mystical flower energy,
+no romance,
+no sensual pose,
+no erotic interpretation,
+spiritual energy phenomenon,
+overwhelming aura effect,
+hallucinatory mystical atmosphere,
+the lotus is the focus, not intimacy
+`
+  : ""}
+
+${sectBannerBlock}
+
+${abilityPromptBlock}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+close-up on object or medium shot depending on readability,
+cinematic storytelling,
+high detail prop rendering,
+clear narrative emphasis,
+if the story mentions a weapon, the weapon must be visible,
+if the story mentions lights, the lights must be visible,
+if the story mentions an artifact, altar, scroll or portal, it must be visible,
+if the story mentions a sect, the sect must be represented as a flag, emblem, sigil, crest or standard
+`;
+  } else if (sceneFocus === "creature_focus") {
+    const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+
+    finalPrompt = `
+CREATURE DOMINANT PANEL,
+monster is the main subject,
+do not reduce the panel to a hero portrait,
+do not place a human face as the foreground focus,
+the creature must occupy most of the frame,
+the monster must be clearly visible,
+non-human anatomy,
+grotesque anatomy,
+threatening posture,
+ugly asymmetrical face,
+monster-focused composition,
+if goblin or goblin lord is mentioned, it must look monstrous and non-human,
+
+${stylePreset},
+
+SCENE ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+${creaturePromptBlock}
+
+${abilityPromptBlock}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+creature dominance,
+enemy clearly visible,
+violent monster presence,
+dark fantasy horror energy,
+no anime hero portrait,
+no pretty humanoid monster,
+no foreground protagonist
+`;
+  } else if (sceneFocus === "group_scene") {
+    const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
+
+    finalPrompt = `
+group scene,
+multiple figures clearly visible,
+at least 8 people visible in the scene,
+multiple full bodies shown,
+crowd occupies the foreground and midground,
+no single lone figure in an empty space,
+no empty plaza or deserted environment,
+group must dominate the frame,
+characters in motion or ready stance,
+no creature anatomy,
+no monster design,
+no non-human enemies unless the panel explicitly requires it,
+
+${stylePreset},
+
+SCENE ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+GROUP DETAILS:
+${crowdSupport}
+
+CROWD RULES:
+show multiple distinct silhouettes,
+characters visible at different depths,
+foreground figures partially cropped is acceptable,
+midground figures fully visible,
+background figures as silhouettes or partial,
+group must feel like a real army, guild, crowd or team,
+no single hero portrait in a crowd context,
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+cinematic manga storytelling,
+scene must feel populated and alive,
+crowd energy and tension must be visible,
+balanced group staging,
+clear readable composition
+`;
+  } else if (sceneFocus === "two_characters" && charactersData.length >= 2) {
+    const sortedPair = sortCharactersForConsistency(charactersData).slice(0, 2);
+    const charA = sortedPair[0];
+    const charB = sortedPair[1];
+    const persistentAbilityA = buildPersistentAbilityBlock(charA, combinedPanelText);
+    const persistentAbilityB = buildPersistentAbilityBlock(charB, combinedPanelText);
+    const safeVisualText = sanitizeMultiCharacterText(visualText);
+    const safeDialogueText = sanitizeMultiCharacterText(dialogueText);
+    const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+
+    finalPrompt = `
+exactly two characters,
+only two characters,
+both characters clearly visible,
+both faces visible,
+both heads visible,
+left character and right character,
+medium two-shot or medium wide shot,
+clear separation between both characters,
+visible gap between bodies,
+INTERACTION RULE:
+no physical contact unless explicitly stated,
+maintain personal space,
+neutral or tense distance,
+focus on eye contact or stance,
+
+${stylePreset},
+
+Character A:
+${charA.identityPrompt}
+${buildCharacterConsistencyAnchor(charA)}
+
+Character B:
+${charB.identityPrompt}
+${buildCharacterConsistencyAnchor(charB)}
+
+SCENE ACTION:
+${safeVisualText}
+
+EMOTIONAL CONTEXT:
+${safeDialogueText}
+
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+${creaturePromptBlock}
+
+PERSISTENT ABILITY A:
+${persistentAbilityA}
+
+PERSISTENT ABILITY B:
+${persistentAbilityB}
+
+${abilityPromptBlock}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+cinematic manga storytelling,
+clear focal point,
+balanced anatomy,
+both characters readable
+`;
+  } else if (sceneFocus === "character_in_environment" && charactersData.length >= 1) {
+    const char = preferReferenceCharacter(
+      dedupeCharacters(charactersData),
+      uniqueDetected[0] || charactersData[0]?.name || null
+    );
+    const persistentAbilityBlock = buildPersistentAbilityBlock(char, combinedPanelText);
+    const techniqueVariationBlock = buildTechniqueVariationBlock(char, combinedPanelText);
+    const envDetails = buildEnvironmentDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const objDetails = buildObjectDetails(`${visualText} ${dialogueText}`, resolvedWorldMode);
+    const crowdSupport = buildCrowdSupportPrompt(`${visualText} ${dialogueText}`);
+    const consistencyAnchor = buildCharacterConsistencyAnchor(char);
+
+    finalPrompt = `
+single main character inside a strong visible environment,
+character and environment both important,
+do not crop into face-only portrait,
+show the place clearly,
+show architecture or setting clearly,
+medium wide shot or wide shot,
+full body or three-quarter body preferred,
+environment must be readable,
+object elements must be visible if mentioned,
+
+${stylePreset},
+
+${char.identityPrompt}
+${consistencyAnchor}
+
+SCENE ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+TECHNIQUE VARIATION:
+${techniqueVariationBlock}
+ENVIRONMENT DETAILS:
+${envDetails}
+
+OBJECT DETAILS:
+${objDetails}
+
+${creaturePromptBlock}
+
+PERSISTENT CHARACTER ABILITY:
+${persistentAbilityBlock}
+
+${abilityPromptBlock}
+
+GROUP ATMOSPHERE:
+${crowdSupport}
+
+must visually represent the narrative described,
+must show the setting described in the text,
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+cinematic manga storytelling,
+environmental storytelling,
+balanced anatomy,
+clear focal hierarchy
+`;
+  } else if (charactersData.length >= 1) {
+    const preferredSingleName =
+      uniqueDetected.find((n) => normalizeNameLower(n) === "mefisto") ||
+      charactersData[0]?.name ||
+      null;
+
+    const char = preferReferenceCharacter(charactersData, preferredSingleName);
+    const persistentAbilityBlock = buildPersistentAbilityBlock(char, combinedPanelText);
+    const consistencyAnchor = buildCharacterConsistencyAnchor(char);
+
+    finalPrompt = `
+single character focus,
+CHARACTER VARIATION RULES:
+same identity, different scene,
+same face, different pose,
+same face, different expression,
+same face, different action,
+allow dynamic combat movement if the scene requires it,
+allow visible technique effects if the scene requires it,
+do not repeat the same portrait composition every panel,
+only ${char.name} visible,
+no other people,
+portrait shot or medium action shot depending on the scene,
+full head visible,
+no face crop,
+no head crop,
+no chest-only crop,
+no torso-only crop,
+centered character framing,
+
+${stylePreset},
+
+${char.identityPrompt}
+${consistencyAnchor}
+
+CURRENT ACTION:
+${visualText}
+
+EMOTIONAL CONTEXT:
+${dialogueText}
+
+must visually represent the narrative described,
+must match the dialogue context,
+no unrelated objects,
+focus on the character involved in the dialogue,
+
+PERSISTENT CHARACTER ABILITY:
+${persistentAbilityBlock}
+
+${abilityPromptBlock}
+
+CAMERA:
+${composition.camera},
+
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+
+clear focal point,
+balanced anatomy,
+high detail face,
+cinematic storytelling
+`;
+  } else {
+    finalPrompt = `
+${stylePreset},
+${visualText},
+${composition.camera},
+${composition.composition},
+${composition.extra},
+${framingTag},
+${extraFramingRules},
+${abilityPromptBlock},
+cinematic scene
 `;
   }
 
-  return "";
-}
+  // Normalize animation
+  const panelAnimation = {
+    ...getDefaultPanelAnimation(panel),
+    ...(panel.animation || {}),
+  };
 
-function getMangaStyle(title) {
-  if (title.toLowerCase().includes("torres")) {
-    return "dark_cultivator";
-  }
+  // ── Clear stale panel data so regeneration is always fresh ──────────────
+  // Prevents old generatedFrames / referenceImage from leaking into the new call
+  panel.generatedFrames = [];
+  panel.renderMeta = null;
 
-  return "dark_cultivator";
-}
-
-function detectSceneType(imagePrompt) {
-  const t = String(imagePrompt || "").toLowerCase();
-
-  const envs = detectEnvironmentKeywords(t);
-  const objs = detectObjectKeywords(t);
-  const creatures = detectCreatureKeywords(t);
-  const sectSymbolic = hasSectBannerFocus(t);
-
-  if (detectGroupScene(t)) return "group_scene";
+  // Build payload
+  let payload;
 
   if (
-    creatures.length &&
-    (
-      t.includes("man") ||
-      t.includes("woman") ||
-      t.includes("character") ||
-      t.includes("cultivator") ||
-      t.includes("girl") ||
-      t.includes("boy")
-    )
+    sceneFocus === "environment" ||
+    sceneFocus === "object_focus" ||
+    sceneFocus === "group_scene" ||
+    sceneFocus === "world_explanation" || // pure infographic — no character data
+    sceneFocus === "creature_focus"
   ) {
-    return "character_in_environment";
+    payload = {
+  prompt: finalPrompt,
+  seed: null,
+  styleSeed: panelSeed,
+  gender: null,
+  identityPrompt: "",
+  referenceImage: null,
+  characterCount: 0,
+  duoType: null,
+  abilityName: "",
+  abilityPrompt: "",
+  abilityColor: "",
+  abilityVfx: [],
+  animation: panelAnimation,
+
+  // 🔥 IMPORTANTE
+  worldMode: resolvedWorldMode || "auto",
+  sceneFocus: sceneFocus || "auto",
+};
+
+    // ── Debug log: verify pure txt2img payload for no-character sceneFocus ──
+    if (sceneFocus === "group_scene" || sceneFocus === "world_explanation") {
+      console.log(`${sceneFocus.toUpperCase()} PAYLOAD:`, JSON.stringify(payload, null, 2));
+    }
+  } else {
+    const charactersForPayload =
+      sceneFocus === "two_characters"
+        ? sortCharactersForConsistency(dedupeCharacters(charactersData)).slice(0, 2)
+        : [preferReferenceCharacter(dedupeCharacters(charactersData))].filter(Boolean);
+
+    payload = await buildGenerationPayload(
+      { ...panel, imagePrompt: finalPrompt },
+      charactersForPayload,
+      panelSeed
+    );
+
+    // Attach worldMode so FastAPI receives it on every branch
+payload.worldMode = resolvedWorldMode || "auto";
+payload.sceneFocus = sceneFocus || "auto";
   }
 
-  if (creatures.length) return "group_scene";
+  const imageResult = await generateImage(payload);
+  const base64 = imageResult.image;
 
-// 🔥 PRIORIDAD: grupo encapuchado con identidad de secta
-if (
-  sectSymbolic &&
-  (
-   t.includes("grupo") ||
-      t.includes("encapuch") ||
-      t.includes("túnica") ||
-      t.includes("tunica") ||
-      t.includes("miembros") ||
-      t.includes("vestía") ||
-      t.includes("vestian") ||
-      t.includes("vestían") ||
-      t.includes("sombras") ||
-      t.includes("sombra de dragón") ||
-      t.includes("sombra de dragon")
-  )
-) {
-  return "group_scene";
-}
-
-// símbolo puro (sin personas)
-if (sectSymbolic) return "object_focus";
-
+  // Auto-save reference image for new characters
   if (
-    envs.length &&
-    (
-      t.includes("man") ||
-      t.includes("woman") ||
-      t.includes("character") ||
-      t.includes("cultivator") ||
-      t.includes("girl") ||
-      t.includes("boy")
-    )
+    imageResult.generatedReferenceImage &&
+    payload.characterCount === 1 &&
+    charactersData.length === 1 &&
+    !charactersData[0].referenceImage
   ) {
-    return "character_in_environment";
+    charactersData[0].referenceImage = imageResult.generatedReferenceImage;
+    await charactersData[0].save();
   }
 
-  if (objs.length) return "object_focus";
-  if (envs.length) return "environment";
+  const imageUrl = await uploadMangaImage(
+    base64,
+    title,
+    chapterNumber,
+    pageNumber,
+    panelIndex
+  );
 
-  if (
-    detectAbilityKeywords(t) &&
-    (
-      t.includes("man") ||
-      t.includes("woman") ||
-      t.includes("character") ||
-      t.includes("cultivator") ||
-      t.includes("girl") ||
-      t.includes("boy")
-    )
-  ) {
-    return "single_character";
-  }
+  const generatedFrames = Array.isArray(imageResult.frames)
+    ? imageResult.frames
+    : [];
 
-  if (
-    t.includes("two characters") ||
-    t.includes("conversation") ||
-    t.includes("interaction between") ||
-    t.includes("duo")
-  ) {
-    return "two_characters";
-  }
+  const renderMeta = {
+    steps: imageResult.steps,
+    guidance: imageResult.guidance,
+    lora_scale: imageResult.lora_scale,
+    motionUsed: panelAnimation?.motion || "idle",
+    sceneFocus,
+    viewAngle,
+    worldMode: resolvedWorldMode,
+  };
 
-  return "single_character";
-}
-function detectCreatureKeywords(text = "") {
-  const t = String(text || "").toLowerCase();
-
-  const words = [
-    "goblin",
-    "goblin lord",
-    "monster",
-    "monstruo",
-    "bestia",
-    "creature",
-    "criatura",
-    "orc",
-    "demon",
-    "beast"
-  ];
-
-  return words.filter(w => t.includes(w));
-}
-
-function buildCreatureDetails(text = "") {
-  const t = String(text || "").toLowerCase();
-  const parts = [];
-
-  if (t.includes("goblin lord")) {
-    parts.push("massive goblin lord, monstrous humanoid creature, dark green skin, brutal face, sharp teeth, large iron sword, menacing non-human anatomy");
-  } else if (t.includes("goblin")) {
-    parts.push("small savage goblin, green skin, monstrous face, sharp ears, ugly non-human creature, crude weapon");
-  }
-
-  if (t.includes("monster") || t.includes("monstruo") || t.includes("bestia")) {
-    parts.push("clearly non-human enemy, monster anatomy, threatening creature design");
-  }
-
-  return parts.join(", ");
-}
-
-function buildTechniqueVariationBlock(character, panelText = "") {
-  if (!character) return "";
-
-  const lowerName = String(character.name || "").toLowerCase();
-  const text = String(panelText || "").toLowerCase();
-  const hasAbility = detectAbilityKeywords(text);
-
-  if (!hasAbility) return "";
-
-  if (lowerName === "kelvin") {
-    return `
-KELVIN TECHNIQUE VISUAL MODE:
-same exact Kelvin face,
-same short black hair,
-same dark eyes,
-same masculine identity,
-dynamic battle pose,
-combat stance variation,
-body movement,
-impact motion,
-golden battle aura clearly visible,
-golden flames clearly visible,
-shockwave distortion,
-power release affecting the environment,
-war-god presence,
-do not make Kelvin look static,
-do not repeat the same portrait composition,
-do not hide the technique,
-the technique must visibly change the scene
-`;
-  }
-
-  return `
-TECHNIQUE VISUAL MODE:
-same exact character identity,
-dynamic pose variation,
-visible power release,
-environment reacting to the power,
-do not repeat the same static composition
-`;
+  return {
+    imageUrl,
+    finalPrompt: finalPrompt.trim(),
+    generatedFrames,
+    renderMeta,
+  };
 }

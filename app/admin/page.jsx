@@ -28,6 +28,17 @@ export default function AdminPage() {
   const [mangaPrompt, setMangaPrompt] = useState("");
   const [contentProfile, setContentProfile] = useState("tiktok");
 
+  // STORYBOARD / IMAGEN GENERATION STATE
+  const [generatingStoryboard, setGeneratingStoryboard] = useState(false);
+  const [generatingPanelImages, setGeneratingPanelImages] = useState({}); // key: "pageIdx-panelIdx"
+  const [uploadingPanelImages, setUploadingPanelImages] = useState({}); // key: "pageIdx-panelIdx"
+  const [uploadingPanelVideos, setUploadingPanelVideos] = useState({}); // key: "pageIdx-panelIdx"
+  const [generatingMissingImages, setGeneratingMissingImages] = useState(false);
+  const [missingProgress, setMissingProgress] = useState("");
+
+  // Expanded finalPrompt panels: key "pageIdx-panelIdx" -> boolean
+  const [expandedFinalPrompts, setExpandedFinalPrompts] = useState({});
+
   const [generatingVideo, setGeneratingVideo] = useState(false);
 
   const [selectedFormats, setSelectedFormats] = useState([
@@ -113,6 +124,22 @@ export default function AdminPage() {
             imagePrompt: panel.imagePrompt || "",
             imageUrl: panel.imageUrl || panel.image || "",
             order: panel.order || panelIndex + 1,
+            characters: Array.isArray(panel.characters) ? panel.characters : [],
+            sceneFocus: panel.sceneFocus || "",
+            panelKind: panel.panelKind || "",
+            viewAngle: panel.viewAngle || "front",
+            animation: panel.animation || null,
+            generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
+            directorIntent: panel.directorIntent || "",
+            emotionalBeat: panel.emotionalBeat || "",
+            visualPriority: panel.visualPriority || "medium",
+            worldMode: panel.worldMode || "auto",
+            veoCandidate: !!panel.veoCandidate,
+            veoPrompt: panel.veoPrompt || "",
+            manualVideoUrl: panel.manualVideoUrl || panel.flowVideoUrl || "",
+            finalPrompt: panel.finalPrompt || "",
+            renderMeta: panel.renderMeta || null,
+            approved: !!panel.approved,
           })),
         })),
       }));
@@ -132,6 +159,22 @@ export default function AdminPage() {
               imagePrompt: panel.imagePrompt || "",
               imageUrl: panel.imageUrl || panel.image || "",
               order: panel.order || panelIndex + 1,
+              characters: Array.isArray(panel.characters) ? panel.characters : [],
+              sceneFocus: panel.sceneFocus || "",
+              panelKind: panel.panelKind || "",
+              viewAngle: panel.viewAngle || "front",
+              animation: panel.animation || null,
+              generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
+              directorIntent: panel.directorIntent || "",
+              emotionalBeat: panel.emotionalBeat || "",
+              visualPriority: panel.visualPriority || "medium",
+              worldMode: panel.worldMode || "auto",
+              veoCandidate: !!panel.veoCandidate,
+              veoPrompt: panel.veoPrompt || "",
+              manualVideoUrl: panel.manualVideoUrl || panel.flowVideoUrl || "",
+              finalPrompt: panel.finalPrompt || "",
+              renderMeta: panel.renderMeta || null,
+              approved: !!panel.approved,
             })),
           })),
         },
@@ -140,6 +183,31 @@ export default function AdminPage() {
 
     return [];
   };
+
+  const normalizePanel = (panel, panelIndex) => ({
+    type: panel.type || "narration",
+    dialogue: panel.dialogue || "",
+    imagePrompt: panel.imagePrompt || "",
+    imageUrl: panel.imageUrl || "",
+    order: panel.order || panelIndex + 1,
+    characters: Array.isArray(panel.characters) ? panel.characters : [],
+    sceneFocus: panel.sceneFocus || "",
+    panelKind: panel.panelKind || "",
+    viewAngle: panel.viewAngle || "front",
+    animation: panel.animation || null,
+    generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
+    directorIntent: panel.directorIntent || "",
+    emotionalBeat: panel.emotionalBeat || "",
+    visualPriority: panel.visualPriority || "medium",
+    worldMode: panel.worldMode || "auto",
+    veoCandidate: !!panel.veoCandidate,
+    veoPrompt: panel.veoPrompt || "",
+    manualVideoUrl: panel.manualVideoUrl || "",
+    audioUrl: panel.audioUrl || "",
+    finalPrompt: panel.finalPrompt || "",
+    renderMeta: panel.renderMeta || null,
+    approved: !!panel.approved,
+  });
 
   const createNewChapter = () => {
     const nextNumber = mangaChapters.length + 1;
@@ -154,11 +222,7 @@ export default function AdminPage() {
     setMangaChapters((prev) => [...prev, newChapter]);
     setSelectedChapterIndex(mangaChapters.length);
 
-    setGeneratedVideos({
-      tiktok: "",
-      shorts: "",
-      youtube: "",
-    });
+    setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
   };
 
   // -------------------------------------------------
@@ -203,11 +267,7 @@ export default function AdminPage() {
       setContentProfile("tiktok");
     }
 
-    setGeneratedVideos({
-      tiktok: "",
-      shorts: "",
-      youtube: "",
-    });
+    setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
   };
 
   // -------------------------------------------------
@@ -230,11 +290,10 @@ export default function AdminPage() {
     setMangaPrompt("");
     setContentProfile("tiktok");
 
-    setGeneratedVideos({
-      tiktok: "",
-      shorts: "",
-      youtube: "",
-    });
+    setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
+    setGeneratingPanelImages({});
+    setExpandedFinalPrompts({});
+    setMissingProgress("");
   };
 
   // -------------------------------------------------
@@ -289,13 +348,9 @@ export default function AdminPage() {
       prompt: chapter.prompt || "",
       pages: (chapter.pages || []).map((page, pageIndex) => ({
         pageNumber: page.pageNumber || pageIndex + 1,
-        panels: (page.panels || []).map((panel, panelIndex) => ({
-          type: panel.type || "narration",
-          dialogue: panel.dialogue || "",
-          imagePrompt: panel.imagePrompt || "",
-          imageUrl: panel.imageUrl || "",
-          order: panel.order || panelIndex + 1,
-        })),
+        panels: (page.panels || []).map((panel, panelIndex) =>
+          normalizePanel(panel, panelIndex)
+        ),
       })),
     }));
 
@@ -347,11 +402,19 @@ export default function AdminPage() {
   };
 
   // -------------------------------------------------
-  // GENERATE MANGA (AI)
+  // ✅ PASO 1: GENERAR STORYBOARD (sin imágenes)
   // -------------------------------------------------
-  const generateManga = async () => {
-    if (!title.trim()) return alert("Pon un título");
+  const generateStoryboard = async () => {
+    if (!title.trim()) return alert("Pon un título al manga");
     if (!mangaPrompt.trim()) return alert("Describe el capítulo");
+
+    // Confirmar si ya hay páginas
+    if (currentPages.length > 0) {
+      const ok = confirm(
+        "Esto reemplazará el storyboard actual de este capítulo. ¿Continuar?"
+      );
+      if (!ok) return;
+    }
 
     let chaptersCopy = [...mangaChapters];
     let chapterIndex = selectedChapterIndex;
@@ -363,69 +426,370 @@ export default function AdminPage() {
         prompt: mangaPrompt,
         pages: [],
       };
-
       chaptersCopy = [firstChapter];
       chapterIndex = 0;
-
       setMangaChapters(chaptersCopy);
       setSelectedChapterIndex(0);
       setChapterTitle(firstChapter.title);
     }
 
-    const current = chaptersCopy[chapterIndex];
+    setGeneratingStoryboard(true);
 
     try {
-      const res = await fetch("/api/ai/generate-manga", {
+      const current = chaptersCopy[chapterIndex];
+
+      const res = await fetch("/api/manga/storyboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           prompt: mangaPrompt,
-          previousPages: current.pages || [],
+          previousPages: [], // siempre vacío: reemplazamos
+          contentProfile,
+          chapterNumber: current.chapterNumber || chapterIndex + 1,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.pages) {
+        alert(data.error || "Error generando storyboard");
+        return;
+      }
+
+      const newPages = data.pages.map((p, i) => ({
+        pageNumber: i + 1,
+        panels: (p.panels || []).map((panel, panelIndex) =>
+          normalizePanel(panel, panelIndex)
+        ),
+      }));
+
+      chaptersCopy[chapterIndex] = {
+        ...current,
+        title: current.title || `Capítulo ${chapterIndex + 1}`,
+        prompt: mangaPrompt,
+        pages: newPages, // reemplaza completamente
+      };
+
+      setMangaChapters([...chaptersCopy]);
+      setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
+      setGeneratingPanelImages({});
+      setExpandedFinalPrompts({});
+    } catch (error) {
+      console.error(error);
+      alert("Error generando storyboard");
+    } finally {
+      setGeneratingStoryboard(false);
+    }
+  };
+
+  // -------------------------------------------------
+  // ✅ PASO 2: GENERAR IMAGEN POR PANEL
+  // -------------------------------------------------
+  const generatePanelImage = async (pageIndex, panelIndex) => {
+    const panelKey = `${pageIndex}-${panelIndex}`;
+    setGeneratingPanelImages((prev) => ({ ...prev, [panelKey]: true }));
+
+    try {
+      const page = currentPages[pageIndex];
+      const panel = page?.panels?.[panelIndex];
+
+      if (!panel) {
+        alert("Panel no encontrado");
+        return;
+      }
+
+      const chapterNumber =
+        currentChapter?.chapterNumber || selectedChapterIndex + 1;
+
+      const res = await fetch("/api/manga/generate-panel-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          chapterNumber,
+          pageIndex,
+          panelIndex,
+          panel,
           contentProfile,
         }),
       });
 
       const data = await res.json();
 
-      if (data.pages) {
-        const offset = (current.pages || []).length;
+      if (!res.ok || data.error) {
+        alert(data.error || "Error generando imagen del panel");
+        return;
+      }
 
-        const newPages = data.pages.map((p, i) => ({
-          pageNumber: offset + i + 1,
-          panels: (p.panels || []).map((panel, panelIndex) => ({
-            type: panel.type || "narration",
-            dialogue: panel.dialogue || "",
-            imagePrompt: panel.imagePrompt || "",
-            imageUrl: panel.imageUrl || panel.image || "",
-            order: panel.order || panelIndex + 1,
-          })),
-        }));
+      // Actualizar solo ese panel en el estado
+      setMangaChapters((prev) => {
+        const updated = [...prev];
+        const chapter = { ...updated[selectedChapterIndex] };
+        const pages = [...(chapter.pages || [])];
+        const pg = { ...pages[pageIndex] };
+        const panels = [...(pg.panels || [])];
 
-        chaptersCopy[chapterIndex] = {
-          ...current,
-          title: current.title || `Capítulo ${chapterIndex + 1}`,
-          prompt: mangaPrompt,
-          pages: [...(current.pages || []), ...newPages],
+        panels[panelIndex] = {
+          ...panels[panelIndex],
+          imageUrl: data.imageUrl,
+          generatedFrames: data.generatedFrames || [],
+          finalPrompt: data.finalPrompt || "",
+          renderMeta: data.renderMeta || null,
         };
 
-        setMangaChapters(chaptersCopy);
-        setGeneratedVideos({
-          tiktok: "",
-          shorts: "",
-          youtube: "",
-        });
-      } else {
-        alert("Error generando manga");
-      }
+        pg.panels = panels;
+        pages[pageIndex] = pg;
+        chapter.pages = pages;
+        updated[selectedChapterIndex] = chapter;
+        return updated;
+      });
     } catch (error) {
       console.error(error);
-      alert("Error generando manga");
+      alert("Error generando imagen del panel");
+    } finally {
+      setGeneratingPanelImages((prev) => {
+        const copy = { ...prev };
+        delete copy[panelKey];
+        return copy;
+      });
     }
   };
 
   // -------------------------------------------------
-  // GENERATE CHAPTER AI
+  // ✅ SUBIR IMAGEN MANUAL POR PANEL
+  // -------------------------------------------------
+  const uploadManualPanelImage = async (pageIndex, panelIndex, uploadedFile) => {
+    if (!uploadedFile) return;
+
+    const panelKey = `${pageIndex}-${panelIndex}`;
+    setUploadingPanelImages((prev) => ({ ...prev, [panelKey]: true }));
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadedFile);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "No se pudo subir la imagen");
+      }
+
+      setMangaChapters((prev) => {
+        const updated = [...prev];
+        const chapter = { ...updated[selectedChapterIndex] };
+        const pages = [...(chapter.pages || [])];
+        const pg = { ...pages[pageIndex] };
+        const panels = [...(pg.panels || [])];
+
+        panels[panelIndex] = {
+          ...panels[panelIndex],
+          imageUrl: data.url,
+          generatedFrames: [],
+          renderMeta: null,
+        };
+
+        pg.panels = panels;
+        pages[pageIndex] = pg;
+        chapter.pages = pages;
+        updated[selectedChapterIndex] = chapter;
+        return updated;
+      });
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Error subiendo imagen manual del panel");
+    } finally {
+      setUploadingPanelImages((prev) => {
+        const copy = { ...prev };
+        delete copy[panelKey];
+        return copy;
+      });
+    }
+  };
+
+  // -------------------------------------------------
+  // ✅ SUBIR VIDEO MANUAL POR PANEL
+  // -------------------------------------------------
+  const uploadManualPanelVideo = async (pageIndex, panelIndex, uploadedFile) => {
+    if (!uploadedFile) return;
+
+    const panelKey = `${pageIndex}-${panelIndex}`;
+    setUploadingPanelVideos((prev) => ({ ...prev, [panelKey]: true }));
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadedFile);
+
+      const res = await fetch("/api/upload-video", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "No se pudo subir el video");
+      }
+
+      setMangaChapters((prev) => {
+        const updated = [...prev];
+        const chapter = { ...updated[selectedChapterIndex] };
+        const pages = [...(chapter.pages || [])];
+        const pg = { ...pages[pageIndex] };
+        const panels = [...(pg.panels || [])];
+
+        panels[panelIndex] = {
+          ...panels[panelIndex],
+          manualVideoUrl: data.url,
+        };
+
+        pg.panels = panels;
+        pages[pageIndex] = pg;
+        chapter.pages = pages;
+        updated[selectedChapterIndex] = chapter;
+        return updated;
+      });
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Error subiendo video manual del panel");
+    } finally {
+      setUploadingPanelVideos((prev) => {
+        const copy = { ...prev };
+        delete copy[panelKey];
+        return copy;
+      });
+    }
+  };
+
+  // -------------------------------------------------
+  // ✅ GESTIÓN DE PÁGINAS DEL STORYBOARD
+  // -------------------------------------------------
+  const createEmptyPanel = () => ({
+    type: "narration",
+    imageUrl: "",
+    dialogue: "",
+    imagePrompt: "",
+    order: 1,
+    characters: [],
+    sceneFocus: "",
+    panelKind: "",
+    viewAngle: "front",
+    animation: null,
+    generatedFrames: [],
+    directorIntent: "",
+    emotionalBeat: "",
+    visualPriority: "medium",
+    worldMode: "auto",
+    veoCandidate: false,
+    veoPrompt: "",
+    manualVideoUrl: "",
+    finalPrompt: "",
+    renderMeta: null,
+    approved: false,
+  });
+
+  const createEmptyPage = () => ({
+    pageNumber: 1,
+    panels: [createEmptyPanel()],
+  });
+
+  const renumberPages = (pages = []) =>
+    pages.map((page, pageIndex) => ({
+      ...page,
+      pageNumber: pageIndex + 1,
+      panels: (page.panels || []).map((panel, panelIndex) => ({
+        ...panel,
+        order: panelIndex + 1,
+      })),
+    }));
+
+  const updateCurrentChapterPages = (updater) => {
+    setMangaChapters((prev) => {
+      const updated = [...prev];
+      const chapter = { ...updated[selectedChapterIndex] };
+      const newPages = renumberPages(updater(chapter.pages || []));
+      chapter.pages = newPages;
+      updated[selectedChapterIndex] = chapter;
+      return updated;
+    });
+  };
+
+  const insertPageAt = (pageIndex) => {
+    updateCurrentChapterPages((pages) => {
+      const copy = [...pages];
+      copy.splice(pageIndex, 0, createEmptyPage());
+      return copy;
+    });
+  };
+
+  const insertPageAfter = (pageIndex) => {
+    updateCurrentChapterPages((pages) => {
+      const copy = [...pages];
+      copy.splice(pageIndex + 1, 0, createEmptyPage());
+      return copy;
+    });
+  };
+
+  const deletePageAt = (pageIndex) => {
+    if (!confirm(`¿Eliminar la página ${pageIndex + 1}? Esta acción no se puede deshacer.`)) return;
+    updateCurrentChapterPages((pages) =>
+      pages.filter((_, index) => index !== pageIndex)
+    );
+  };
+
+  const movePage = (pageIndex, direction) => {
+    updateCurrentChapterPages((pages) => {
+      const targetIndex = pageIndex + direction;
+      if (targetIndex < 0 || targetIndex >= pages.length) return pages;
+      const copy = [...pages];
+      [copy[pageIndex], copy[targetIndex]] = [copy[targetIndex], copy[pageIndex]];
+      return copy;
+    });
+  };
+
+  // -------------------------------------------------
+  // ✅ GENERAR IMÁGENES FALTANTES (paneles sin imageUrl)
+  // -------------------------------------------------
+  const generateMissingImages = async () => {
+    if (!title.trim()) return alert("El manga necesita título");
+
+    const pages = currentPages;
+    const missing = [];
+
+    for (let pi = 0; pi < pages.length; pi++) {
+      for (let pni = 0; pni < (pages[pi].panels || []).length; pni++) {
+        if (!pages[pi].panels[pni].imageUrl) {
+          missing.push({ pageIndex: pi, panelIndex: pni });
+        }
+      }
+    }
+
+    if (!missing.length) {
+      alert("Todos los paneles ya tienen imagen");
+      return;
+    }
+
+    setGeneratingMissingImages(true);
+    setMissingProgress(`0 / ${missing.length}`);
+
+    for (let i = 0; i < missing.length; i++) {
+      const { pageIndex, panelIndex } = missing[i];
+      setMissingProgress(`${i + 1} / ${missing.length} — Página ${pageIndex + 1}, Panel ${panelIndex + 1}`);
+      await generatePanelImage(pageIndex, panelIndex);
+    }
+
+    setMissingProgress("");
+    setGeneratingMissingImages(false);
+    alert("Imágenes faltantes generadas");
+  };
+
+  // -------------------------------------------------
+  // GENERATE CHAPTER AI (novels)
   // -------------------------------------------------
   const generateChapterAI = async () => {
     const res = await fetch("/api/ai/generate-chapter", {
@@ -467,7 +831,7 @@ export default function AdminPage() {
   };
 
   // -------------------------------------------------
-  // GENERATE VIDEO AUTOMÁTICO MULTIFORMATO
+  // GENERATE VIDEO
   // -------------------------------------------------
   const generateVideo = async () => {
     if (!title.trim()) return alert("El manga necesita título");
@@ -476,18 +840,12 @@ export default function AdminPage() {
     }
 
     setGeneratingVideo(true);
-    setGeneratedVideos({
-      tiktok: "",
-      shorts: "",
-      youtube: "",
-    });
+    setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
 
     try {
       const res = await fetch("/api/ai/generate-video", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           formats: selectedFormats,
@@ -502,11 +860,7 @@ export default function AdminPage() {
         throw new Error(data.error || "Error generando video");
       }
 
-      const mapped = {
-        tiktok: "",
-        shorts: "",
-        youtube: "",
-      };
+      const mapped = { tiktok: "", shorts: "", youtube: "" };
 
       for (const item of data.videos || []) {
         if (item?.format && item?.videoUrl) {
@@ -525,7 +879,7 @@ export default function AdminPage() {
   };
 
   // -------------------------------------------------
-  // DOWNLOAD VIDEO BY FORMAT
+  // DOWNLOAD VIDEO
   // -------------------------------------------------
   const downloadVideo = async (format) => {
     const videoUrl = generatedVideos[format];
@@ -595,13 +949,36 @@ export default function AdminPage() {
   }, [chapterTitle, mangaPrompt, selectedChapterIndex, mangaChapters.length]);
 
   useEffect(() => {
-    setGeneratedVideos({
-      tiktok: "",
-      shorts: "",
-      youtube: "",
-    });
+    setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
   }, [contentProfile]);
 
+  // -------------------------------------------------
+  // HELPER: update a single panel field
+  // -------------------------------------------------
+  const updatePanelField = (pageIndex, panelIndex, field, value) => {
+    setMangaChapters((prev) => {
+      const updated = [...prev];
+      const chapter = { ...updated[selectedChapterIndex] };
+      const pages = [...(chapter.pages || [])];
+      const pg = { ...pages[pageIndex] };
+      const panels = [...(pg.panels || [])];
+      panels[panelIndex] = { ...panels[panelIndex], [field]: value };
+      pg.panels = panels;
+      pages[pageIndex] = pg;
+      chapter.pages = pages;
+      updated[selectedChapterIndex] = chapter;
+      return updated;
+    });
+  };
+
+  const toggleFinalPrompt = (pageIndex, panelIndex) => {
+    const key = `${pageIndex}-${panelIndex}`;
+    setExpandedFinalPrompts((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // -------------------------------------------------
+  // RENDER
+  // -------------------------------------------------
   return (
     <div className="admin-container">
       <h1 className="admin-title">Panel de Administración</h1>
@@ -884,11 +1261,7 @@ export default function AdminPage() {
                     setSelectedChapterIndex(idx);
                     setChapterTitle(mangaChapters[idx]?.title || "");
                     setMangaPrompt(mangaChapters[idx]?.prompt || "");
-                    setGeneratedVideos({
-                      tiktok: "",
-                      shorts: "",
-                      youtube: "",
-                    });
+                    setGeneratedVideos({ tiktok: "", shorts: "", youtube: "" });
                   }}
                   className="admin-select short-select"
                 >
@@ -901,134 +1274,503 @@ export default function AdminPage() {
               )}
             </div>
 
-            <button className="admin-button" type="button" onClick={generateManga}>
-              🖤 Generar Manga IA
-            </button>
+            {/* ============================================================
+                PASO 1: GENERAR STORYBOARD
+                ============================================================ */}
+            <div style={{ marginTop: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                className="admin-button"
+                type="button"
+                onClick={generateStoryboard}
+                disabled={generatingStoryboard}
+                style={{ background: "linear-gradient(135deg, #4f00bc, #7c3aed)" }}
+              >
+                {generatingStoryboard
+                  ? "⏳ Generando storyboard..."
+                  : "🧠 Generar Storyboard"}
+              </button>
 
-            <button
-              className="admin-button"
-              type="button"
-              onClick={() => {
-                if (!mangaChapters.length) {
-                  const firstChapter = {
-                    chapterNumber: 1,
-                    title: chapterTitle.trim() || "Capítulo 1",
-                    prompt: mangaPrompt,
-                    pages: [],
-                  };
+              <button
+                className="admin-button"
+                type="button"
+                onClick={() => updateCurrentChapterPages((pages) => [...pages, createEmptyPage()])}
+              >
+                ➕ Agregar Página al final
+              </button>
 
-                  const updated = [
-                    {
-                      ...firstChapter,
-                      pages: [
-                        {
-                          pageNumber: 1,
-                          panels: [
-                            {
-                              type: "narration",
-                              imageUrl: "",
-                              dialogue: "",
-                              imagePrompt: "",
-                              order: 1,
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ];
+              <button
+                className="admin-button"
+                type="button"
+                onClick={() => {
+                  if (!mangaChapters.length) return;
+                  updateCurrentChapterPages((pages) =>
+                    pages.length > 1 ? pages.slice(0, -1) : pages
+                  );
+                }}
+              >
+                − Quitar última
+              </button>
+            </div>
 
-                  setMangaChapters(updated);
-                  setSelectedChapterIndex(0);
-                  setChapterTitle(updated[0].title);
-                  return;
-                }
+            {/* ============================================================
+                PASO 2: GENERAR IMÁGENES FALTANTES (general)
+                ============================================================ */}
+            {currentPages.length > 0 && (
+              <div style={{ marginTop: "12px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  className="admin-button"
+                  type="button"
+                  onClick={generateMissingImages}
+                  disabled={generatingMissingImages}
+                  style={{ background: "linear-gradient(135deg, #0d7c00, #22c55e)" }}
+                >
+                  {generatingMissingImages
+                    ? `⏳ Generando... ${missingProgress}`
+                    : "🎨 Generar imágenes faltantes"}
+                </button>
 
-                const updated = [...mangaChapters];
-                const selected = updated[selectedChapterIndex];
-                const pages = selected.pages || [];
-
-                selected.pages = [
-                  ...pages,
-                  {
-                    pageNumber: pages.length + 1,
-                    panels: [
-                      {
-                        type: "narration",
-                        imageUrl: "",
-                        dialogue: "",
-                        imagePrompt: "",
-                        order: 1,
-                      },
-                    ],
-                  },
-                ];
-
-                setMangaChapters(updated);
-              }}
-            >
-              ➕ Agregar Página
-            </button>
-
-            <button
-              className="admin-button"
-              type="button"
-              onClick={() => {
-                if (!mangaChapters.length) return;
-
-                const updated = [...mangaChapters];
-                const selected = updated[selectedChapterIndex];
-                selected.pages = (selected.pages || []).slice(0, -1);
-                setMangaChapters(updated);
-              }}
-            >
-              - Quitar
-            </button>
+                {missingProgress && (
+                  <span style={{ color: "#22c55e", fontSize: "13px" }}>
+                    {missingProgress}
+                  </span>
+                )}
+              </div>
+            )}
 
             <h3>{currentChapter ? currentChapter.title : "Páginas del Manga"}</h3>
 
-            {!currentPages.length && <p>No hay páginas en este capítulo.</p>}
+            {!currentPages.length && <p>No hay páginas en este capítulo. Genera el storyboard primero.</p>}
 
+            {/* ============================================================
+                PANELES EDITABLES
+                ============================================================ */}
             {currentPages.map((page, pageIndex) => (
               <div
                 key={`${selectedChapterIndex}-${page.pageNumber}-${pageIndex}`}
                 className="manga-page"
+                style={{
+                  border: "1px solid rgba(0,183,255,0.2)",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  marginBottom: "24px",
+                  background: "rgba(0,10,30,0.5)",
+                }}
               >
-                <h4>Página {page.pageNumber}</h4>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
+                  <h4 style={{ margin: 0 }}>Página {page.pageNumber}</h4>
 
-                {page.panels.map((panel, panelIndex) => (
-                  <div
-                    key={`${page.pageNumber}-${panel.order}-${panelIndex}`}
-                    className="manga-panel"
+                  <button
+                    type="button"
+                    className="admin-button"
+                    style={{ fontSize: "12px", padding: "4px 10px" }}
+                    onClick={() => insertPageAt(pageIndex)}
                   >
-                    {panel.imageUrl && (
-                      <img
-                        src={panel.imageUrl}
-                        alt={`Panel ${panelIndex + 1}`}
-                        className="manga-image"
-                      />
-                    )}
+                    ➕ Arriba
+                  </button>
 
-                    <div style={{ marginBottom: "6px", fontSize: "12px", opacity: 0.8 }}>
-                      {panel.type === "speech" && "💬 Diálogo"}
-                      {panel.type === "thought" && "🧠 Pensamiento"}
-                      {panel.type === "narration" && "📖 Narración"}
-                    </div>
+                  <button
+                    type="button"
+                    className="admin-button"
+                    style={{ fontSize: "12px", padding: "4px 10px" }}
+                    onClick={() => insertPageAfter(pageIndex)}
+                  >
+                    ➕ Abajo
+                  </button>
 
-                    <textarea
-                      value={panel.dialogue || ""}
-                      onChange={(e) => {
-                        const updated = [...mangaChapters];
-                        updated[selectedChapterIndex].pages[pageIndex].panels[panelIndex].dialogue =
-                          e.target.value;
-                        setMangaChapters(updated);
+                  <button
+                    type="button"
+                    className="admin-button"
+                    style={{ fontSize: "12px", padding: "4px 10px" }}
+                    onClick={() => movePage(pageIndex, -1)}
+                    disabled={pageIndex === 0}
+                  >
+                    ⬆
+                  </button>
+
+                  <button
+                    type="button"
+                    className="admin-button"
+                    style={{ fontSize: "12px", padding: "4px 10px" }}
+                    onClick={() => movePage(pageIndex, 1)}
+                    disabled={pageIndex === currentPages.length - 1}
+                  >
+                    ⬇
+                  </button>
+
+                  <button
+                    type="button"
+                    className="admin-button"
+                    style={{
+                      fontSize: "12px",
+                      padding: "4px 10px",
+                      background: "linear-gradient(135deg, #7f1d1d, #ef4444)",
+                    }}
+                    onClick={() => deletePageAt(pageIndex)}
+                  >
+                    🗑 Eliminar página
+                  </button>
+                </div>
+
+                {page.panels.map((panel, panelIndex) => {
+                  const panelKey = `${pageIndex}-${panelIndex}`;
+                  const isGenerating = !!generatingPanelImages[panelKey];
+                  const isUploading = !!uploadingPanelImages[panelKey];
+                  const isUploadingVideo = !!uploadingPanelVideos[panelKey];
+                  const isFinalPromptExpanded = !!expandedFinalPrompts[panelKey];
+
+                  return (
+                    <div
+                      key={`${page.pageNumber}-${panel.order}-${panelIndex}`}
+                      className="manga-panel"
+                      style={{
+                        border: panel.approved
+                          ? "1px solid #22c55e"
+                          : "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: "10px",
+                        padding: "14px",
+                        marginBottom: "18px",
+                        background: "rgba(255,255,255,0.04)",
                       }}
-                      placeholder="Diálogo"
-                    />
-                  </div>
-                ))}
+                    >
+                      {/* Imagen generada */}
+                      {panel.imageUrl && (
+                        <img
+                          src={panel.imageUrl}
+                          alt={`Panel ${panelIndex + 1}`}
+                          className="manga-image"
+                          style={{
+                            width: "100%",
+                            maxWidth: "380px",
+                            borderRadius: "8px",
+                            marginBottom: "10px",
+                            display: "block",
+                          }}
+                        />
+                      )}
+
+                      {/* Cabecera del panel */}
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "8px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "12px", opacity: 0.7 }}>
+                          Panel {panelIndex + 1}
+                          {panel.type === "speech" && " 💬"}
+                          {panel.type === "thought" && " 🧠"}
+                          {panel.type === "narration" && " 📖"}
+                          {panel.panelKind && ` · ${panel.panelKind}`}
+                          {panel.sceneFocus && ` · ${panel.sceneFocus}`}
+                        </span>
+
+                        {/* Approved checkbox */}
+                        <label style={{ fontSize: "12px", display: "flex", gap: "4px", alignItems: "center", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!panel.approved}
+                            onChange={(e) =>
+                              updatePanelField(pageIndex, panelIndex, "approved", e.target.checked)
+                            }
+                          />
+                          ✅ Aprobado
+                        </label>
+                      </div>
+
+                      {/* Diálogo */}
+                      <label style={{ fontSize: "12px", color: "#00b7ff", display: "block", marginBottom: "4px" }}>
+                        Diálogo
+                      </label>
+                      <textarea
+                        value={panel.dialogue || ""}
+                        onChange={(e) =>
+                          updatePanelField(pageIndex, panelIndex, "dialogue", e.target.value)
+                        }
+                        placeholder="Diálogo"
+                        style={{ width: "100%", minHeight: "60px", marginBottom: "10px", resize: "vertical" }}
+                      />
+
+                      {/* Image Prompt (editable principal) */}
+                      <label style={{ fontSize: "12px", color: "#f59e0b", display: "block", marginBottom: "4px" }}>
+                        🎨 Image Prompt (editable)
+                      </label>
+                      <textarea
+                        value={panel.imagePrompt || ""}
+                        onChange={(e) =>
+                          updatePanelField(pageIndex, panelIndex, "imagePrompt", e.target.value)
+                        }
+                        placeholder="Describe la escena visualmente..."
+                        style={{
+                          width: "100%",
+                          minHeight: "80px",
+                          marginBottom: "10px",
+                          resize: "vertical",
+                          border: "1px solid rgba(245,158,11,0.4)",
+                        }}
+                      />
+
+                      {/* Characters */}
+                      <label style={{ fontSize: "12px", color: "#a78bfa", display: "block", marginBottom: "4px" }}>
+                        Personajes (separados por coma)
+                      </label>
+                      <input
+                        type="text"
+                        value={(panel.characters || []).join(", ")}
+                        onChange={(e) =>
+                          updatePanelField(
+                            pageIndex,
+                            panelIndex,
+                            "characters",
+                            e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                          )
+                        }
+                        placeholder="Kelvin, Karol..."
+                        style={{ width: "100%", marginBottom: "10px" }}
+                      />
+
+                      {/* Scene Focus */}
+                      <label style={{ fontSize: "12px", color: "#a78bfa", display: "block", marginBottom: "4px" }}>
+                        Scene Focus
+                      </label>
+                      <select
+                        value={panel.sceneFocus || ""}
+                        onChange={(e) =>
+                          updatePanelField(pageIndex, panelIndex, "sceneFocus", e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          marginBottom: "10px",
+                          padding: "8px",
+                          background: "rgba(0,0,0,0.4)",
+                          color: "#fff",
+                          borderRadius: "8px",
+                          border: "1px solid rgba(167,139,250,0.3)",
+                        }}
+                      >
+                        <option value="">— automático —</option>
+                        <option value="single_character">single_character</option>
+                        <option value="two_characters">two_characters</option>
+                        <option value="character_in_environment">character_in_environment</option>
+                        <option value="environment">environment</option>
+                        <option value="object_focus">object_focus</option>
+                        <option value="group_scene">group_scene</option>
+                        <option value="creature_focus">creature_focus</option>
+                        <option value="world_explanation">world_explanation</option>
+                      </select>
+
+                      {/* World Mode */}
+                      <label style={{ fontSize: "12px", color: "#34d399", display: "block", marginBottom: "4px" }}>
+                        🌍 World Mode
+                        {panel.worldMode && panel.worldMode !== "auto" && (
+                          <span style={{
+                            marginLeft: "8px",
+                            fontSize: "10px",
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            background:
+                              panel.worldMode === "modern_world" ? "rgba(59,130,246,0.3)" :
+                              panel.worldMode === "tower_emergence" ? "rgba(168,85,247,0.3)" :
+                              panel.worldMode === "cultivation_world" ? "rgba(234,179,8,0.3)" :
+                              panel.worldMode === "inside_tower" ? "rgba(239,68,68,0.3)" :
+                              panel.worldMode === "combat" ? "rgba(249,115,22,0.3)" :
+                              "rgba(255,255,255,0.1)",
+                            color: "#fff",
+                          }}>
+                            {panel.worldMode}
+                          </span>
+                        )}
+                      </label>
+                      <select
+                        value={panel.worldMode || "auto"}
+                        onChange={(e) =>
+                          updatePanelField(pageIndex, panelIndex, "worldMode", e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          marginBottom: "10px",
+                          padding: "8px",
+                          background: "rgba(0,0,0,0.4)",
+                          color: "#fff",
+                          borderRadius: "8px",
+                          border: "1px solid rgba(52,211,153,0.3)",
+                        }}
+                      >
+                        <option value="auto">— inferir automáticamente —</option>
+                        <option value="modern_world">🏙 modern_world (antes de las torres)</option>
+                        <option value="tower_emergence">🗼 tower_emergence (aparición de torres)</option>
+                        <option value="cultivation_world">⚡ cultivation_world (mundo xianxia)</option>
+                        <option value="inside_tower">🏚 inside_tower (interior, mazmorras)</option>
+                        <option value="combat">⚔️ combat (pelea, habilidades, aura)</option>
+                      </select>
+
+                      {(panel.veoCandidate || panel.veoPrompt) && (
+                        <div style={{ marginTop: "8px", padding: "10px", border: "1px solid #444", borderRadius: "8px" }}>
+                          <strong>🎥 Escena Veo/Flow</strong>
+                          <textarea
+                            value={panel.veoPrompt || ""}
+                            onChange={(e) =>
+                              updatePanelField(pageIndex, panelIndex, "veoPrompt", e.target.value)
+                            }
+                            style={{ marginTop: "8px", width: "100%", minHeight: "60px", resize: "vertical" }}
+                            placeholder="Descripción para animación Veo/Flow..."
+                          />
+                        </div>
+                      )}
+
+                      {/* Manual Video URL — texto */}
+                      <label style={{ fontSize: "12px", color: "#f472b6", display: "block", marginBottom: "4px", marginTop: "10px" }}>
+                        URL de video manual (Flow/Veo/Runway)
+                      </label>
+                      <input
+                        value={panel.manualVideoUrl || ""}
+                        onChange={(e) =>
+                          updatePanelField(pageIndex, panelIndex, "manualVideoUrl", e.target.value)
+                        }
+                        placeholder="Pega aquí la URL del video o sube uno con el botón de abajo"
+                        style={{ width: "100%", marginBottom: "4px" }}
+                      />
+                      {/* Preview link si ya tiene video */}
+                      {panel.manualVideoUrl && (
+                        <a
+                          href={panel.manualVideoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: "11px", color: "#60a5fa", display: "block", marginBottom: "10px" }}
+                        >
+                          🎥 Ver video guardado
+                        </a>
+                      )}
+
+                      {/* Botones de imagen */}
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+                        <button
+                          className="admin-button"
+                          type="button"
+                          onClick={() => generatePanelImage(pageIndex, panelIndex)}
+                          disabled={isGenerating || isUploading}
+                          style={{
+                            background: panel.imageUrl
+                              ? "linear-gradient(135deg, #0d7c00, #22c55e)"
+                              : "linear-gradient(135deg, #007bff, #00b7ff)",
+                            fontSize: "13px",
+                            padding: "8px 14px",
+                          }}
+                        >
+                          {isGenerating
+                            ? "⏳ Generando..."
+                            : panel.imageUrl
+                            ? "🔁 Regenerar Imagen"
+                            : "🎨 Generar Imagen"}
+                        </button>
+
+                        {/* Subida manual de imagen */}
+                        <label
+                          className="admin-button"
+                          style={{
+                            cursor: isUploading || isGenerating ? "not-allowed" : "pointer",
+                            background: "linear-gradient(135deg, #7c3aed, #a855f7)",
+                            fontSize: "13px",
+                            padding: "8px 14px",
+                            opacity: isUploading || isGenerating ? 0.6 : 1,
+                            display: "inline-flex",
+                            alignItems: "center",
+                          }}
+                        >
+                          {isUploading ? "⏳ Subiendo..." : "📤 Subir imagen manual"}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            disabled={isUploading || isGenerating}
+                            onChange={(e) => {
+                              const selectedFile = e.target.files?.[0];
+                              if (selectedFile) {
+                                uploadManualPanelImage(pageIndex, panelIndex, selectedFile);
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+
+                        {/* Subida manual de VIDEO */}
+                        <label
+                          className="admin-button"
+                          style={{
+                            cursor: isUploadingVideo || isGenerating ? "not-allowed" : "pointer",
+                            background: "linear-gradient(135deg, #b45309, #f59e0b)",
+                            fontSize: "13px",
+                            padding: "8px 14px",
+                            opacity: isUploadingVideo || isGenerating ? 0.6 : 1,
+                            display: "inline-flex",
+                            alignItems: "center",
+                          }}
+                        >
+                          {isUploadingVideo ? "⏳ Subiendo video..." : "🎥 Subir video manual"}
+                          <input
+                            type="file"
+                            accept="video/mp4,video/webm,video/quicktime"
+                            hidden
+                            disabled={isUploadingVideo || isGenerating}
+                            onChange={(e) => {
+                              const selectedFile = e.target.files?.[0];
+                              if (selectedFile) {
+                                uploadManualPanelVideo(pageIndex, panelIndex, selectedFile);
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      {/* finalPrompt colapsable (readonly, solo debug) */}
+                      {panel.finalPrompt && (
+                        <div style={{ marginTop: "12px" }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleFinalPrompt(pageIndex, panelIndex)}
+                            style={{
+                              background: "none",
+                              border: "1px solid rgba(255,255,255,0.2)",
+                              color: "#aaa",
+                              fontSize: "11px",
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {isFinalPromptExpanded ? "▲ Ocultar finalPrompt" : "▼ Ver finalPrompt (debug)"}
+                          </button>
+
+                          {isFinalPromptExpanded && (
+                            <textarea
+                              readOnly
+                              value={panel.finalPrompt}
+                              style={{
+                                width: "100%",
+                                minHeight: "120px",
+                                marginTop: "6px",
+                                fontSize: "11px",
+                                color: "#888",
+                                background: "rgba(0,0,0,0.3)",
+                                border: "1px solid rgba(255,255,255,0.1)",
+                                borderRadius: "6px",
+                                resize: "vertical",
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* renderMeta */}
+                      {panel.renderMeta && (
+                        <div style={{ fontSize: "10px", color: "#555", marginTop: "6px" }}>
+                          sceneFocus: {panel.renderMeta.sceneFocus} · viewAngle: {panel.renderMeta.viewAngle} · motion: {panel.renderMeta.motionUsed}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ))}
 
+            {/* ============================================================
+                PASO 3: GENERAR VIDEO
+                ============================================================ */}
             <div
               style={{
                 display: "flex",

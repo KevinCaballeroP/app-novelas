@@ -27,7 +27,36 @@ export async function PUT(req, context) {
     const { id } = await context.params;
     const body = await req.json();
 
-    console.log("BODY PUT MANGA:", JSON.stringify(body, null, 2));
+    const cleanPanels = (panels = []) =>
+      panels.map((panel) => ({
+        ...panel,
+
+        // No guardar base64 pesado en Mongo
+        generatedFrames: [],
+
+        // Guardar solo datos ligeros de debug
+        renderMeta: panel.renderMeta
+          ? {
+              steps: panel.renderMeta.steps,
+              guidance: panel.renderMeta.guidance,
+              lora_scale: panel.renderMeta.lora_scale,
+              worldMode: panel.renderMeta.worldMode,
+              sceneFocus: panel.renderMeta.sceneFocus,
+            }
+          : null,
+      }));
+
+    const cleanPages = (pages = []) =>
+      pages.map((page) => ({
+        ...page,
+        panels: cleanPanels(page.panels || []),
+      }));
+
+    const cleanChapters = (chapters = []) =>
+      chapters.map((chapter) => ({
+        ...chapter,
+        pages: cleanPages(chapter.pages || []),
+      }));
 
     const manga = await Manga.findByIdAndUpdate(
       id,
@@ -38,8 +67,8 @@ export async function PUT(req, context) {
           author: body.author,
           coverUrl: body.coverUrl || "",
           genres: body.genres || [],
-          chapters: body.chapters || [],
-          pages: body.pages || [],
+          chapters: cleanChapters(body.chapters || []),
+          pages: cleanPages(body.pages || []),
           published: body.published ?? false,
           visibility: body.visibility || "draft",
           aiGenerated: body.aiGenerated ?? true,
@@ -51,8 +80,6 @@ export async function PUT(req, context) {
         runValidators: true,
       }
     );
-
-    console.log("MANGA GUARDADO:", JSON.stringify(manga, null, 2));
 
     if (!manga) {
       return NextResponse.json({ error: "Manga no encontrado" }, { status: 404 });
