@@ -676,14 +676,20 @@ async function generateSingleFormatVideo({
   const profile = getFormatProfile(format);
   const { width, height, fps, panelPause, minPanelDuration } = profile;
 
-  // Small visual head-start before each narration starts (seconds)
+  // Small visual head-start before each narration starts (seconds).
+  // Only applied to static images — manual Flow/Veo videos start at t=0.
   const VOICE_START_DELAY = 0.55;
+
+  // Breathing room after each manual Flow/Veo clip before the next panel cuts in.
+  const AFTER_MANUAL_VIDEO_PAUSE = 0.35;
 
   const formatDir = path.join(tempDir, format);
   fs.mkdirSync(formatDir, { recursive: true });
 
   const normalizedClipPaths = [];
   const audioSegmentPaths = [];
+  const ambientAudioSegmentPaths = []; // one entry per panel — silence or extracted ambient
+  let hasRealAmbientAudio = false;     // set true when at least one panel uses background/full
 
   for (let i = 0; i < sharedPanels.length; i++) {
     const panel = sharedPanels[i];
@@ -696,18 +702,36 @@ async function generateSingleFormatVideo({
 
     let duration = format === "youtube" ? 2.4 : 1.8;
 
+    // ── Detect manual video early so currentVoiceDelay can be resolved ──────────
+    const isManualVideo = !!panel.manualVideoPath;
+    let manualVideoDuration = 0;
+
+    if (isManualVideo) {
+      manualVideoDuration = getVideoDuration(ffmpegPath, panel.manualVideoPath);
+    }
+
+    // Manual videos (Flow/Veo) already have their own motion — start audio at t=0.
+    // Static images use the delay so the image settles before narration begins.
+    const currentVoiceDelay = isManualVideo ? 0 : VOICE_START_DELAY;
+
+    console.log(`🎬 Panel ${index} — MANUAL VIDEO: ${isManualVideo}`);
+    console.log(`🎬 Panel ${index} — VIDEO DURATION: ${manualVideoDuration}s`);
+    console.log(`🎬 Panel ${index} — VOICE DELAY: ${currentVoiceDelay}s`);
+
     if (usePanelVoices && panel.voicePath) {
       // Visual duration = delay + voice + post-pause so image appears before narrator starts
-      duration = VOICE_START_DELAY + panel.realAudioDuration + panelPause;
+      duration = currentVoiceDelay + panel.realAudioDuration + panelPause;
 
       if (duration < minPanelDuration) {
         duration = minPanelDuration;
       }
 
-      // 1. Pre-voice silence (visual head-start)
-      const preVoiceSilencePath = path.join(formatDir, `pre_voice_${index}.mp3`);
-      createSilenceAudio(ffmpegPath, preVoiceSilencePath, VOICE_START_DELAY);
-      audioSegmentPaths.push(preVoiceSilencePath);
+      // 1. Pre-voice silence (visual head-start — 0 for manual videos)
+      if (currentVoiceDelay > 0) {
+        const preVoiceSilencePath = path.join(formatDir, `pre_voice_${index}.mp3`);
+        createSilenceAudio(ffmpegPath, preVoiceSilencePath, currentVoiceDelay);
+        audioSegmentPaths.push(preVoiceSilencePath);
+      }
 
       // 2. Narration
       audioSegmentPaths.push(panel.voicePath);
@@ -744,14 +768,7 @@ async function generateSingleFormatVideo({
       panel.animation?.camera || "auto"
     );
 
-    // ── Manual video: get real duration and adjust panelDuration accordingly ─────────
-    const isManualVideo = !!panel.manualVideoPath;
-    let manualVideoDuration = 0;
-
-    if (isManualVideo) {
-      manualVideoDuration = getVideoDuration(ffmpegPath, panel.manualVideoPath);
-      console.log(`🎥 Panel ${index}: video manual duration = ${manualVideoDuration}s`);
-    }
+    // isManualVideo and manualVideoDuration are already resolved above (before duration block)
 
     let sourceVisualPath = panel.manualVideoPath || panel.imagePath;
 
@@ -800,17 +817,78 @@ async function generateSingleFormatVideo({
     let resolvedPanelDuration = panelDuration;
 
     if (isManualVideo && manualVideoDuration > 0) {
-      if (usePanelVoices && panel.voicePath) {
-        // Account for delay so the full audio (delay + voice + pause) fits in the visual clip
-        const audioTotal = VOICE_START_DELAY + panel.realAudioDuration + panelPause;
-        resolvedPanelDuration = Math.max(manualVideoDuration, audioTotal);
-      } else {
-        // No voice: use video's natural duration
-        resolvedPanelDuration = manualVideoDuration;
+      const audioTotal = currentVoiceDelay + panel.realAudioDuration + panelPause;
+      const baseVisualDuration = Math.max(manualVideoDuration, audioTotal);
+      resolvedPanelDuration = baseVisualDuration + AFTER_MANUAL_VIDEO_PAUSE;
+
+      console.log(`🎥 Panel ${index} — AUDIO TOTAL: ${audioTotal.toFixed(3)}s`);
+      console.log(`🎥 Panel ${index} — BASE VISUAL: ${baseVisualDuration.toFixed(3)}s`);
+
+      // Fill any gap between what audio covers and what the video actually lasts
+      const missingSilence = baseVisualDuration - audioTotal;
+      console.log(`🎥 Panel ${index} — MISSING SILENCE: ${missingSilence.toFixed(3)}s`);
+
+      if (missingSilence > 0.05) {
+        const fillSilencePath = path.join(formatDir, `fill_manual_${index}.mp3`);
+        createSilenceAudio(ffmpegPath, fillSilencePath, missingSilence);
+        audioSegmentPaths.push(fillSilencePath);
       }
-      console.log(`🎥 Panel ${index}: resolvedPanelDuration = ${resolvedPanelDuration}s (manualVideo=${manualVideoDuration}s)`);
+
+      // Breathing room after the clip — audio must match the extended visual duration
+      const afterManualPausePath = path.join(formatDir, `after_manual_${index}.mp3`);
+      createSilenceAudio(ffmpegPath, afterManualPausePath, AFTER_MANUAL_VIDEO_PAUSE);
+      audioSegmentPaths.push(afterManualPausePath);
+
+      console.log(`🎥 Panel ${index} — RESOLVED PANEL DURATION: ${resolvedPanelDuration.toFixed(3)}s`);
+
+      // ── Ambient audio extraction ─────────────────────────────────────────
+      const audioMode = panel.manualAudioMode || "mute";
+      console.log(`🎥 Panel ${index} — MANUAL AUDIO MODE: ${audioMode}`);
+
+      if (audioMode === "background" || audioMode === "full") {
+        const ambientVolume = audioMode === "background" ? 0.20 : 1.0;
+        const ambientPath = path.join(formatDir, `ambient_${index}.mp3`);
+
+        const ambientResult = spawnSync(
+          ffmpegPath,
+          [
+            "-y",
+            "-stream_loop", "-1",
+            "-i", panel.manualVideoPath,
+            "-t", String(resolvedPanelDuration),
+            "-vn",
+            "-af", `volume=${ambientVolume}`,
+            "-ar", "24000",
+            "-ac", "1",
+            ambientPath,
+          ],
+          { encoding: "utf8", shell: false }
+        );
+
+        if (ambientResult.status === 0) {
+          ambientAudioSegmentPaths.push(ambientPath);
+          hasRealAmbientAudio = true;
+          console.log(`🎥 Panel ${index} — AMBIENT AUDIO: ${ambientPath} (vol ${ambientVolume})`);
+        } else {
+          // Fallback to silence on extraction error
+          const silPath = path.join(formatDir, `ambient_sil_${index}.mp3`);
+          createSilenceAudio(ffmpegPath, silPath, resolvedPanelDuration);
+          ambientAudioSegmentPaths.push(silPath);
+          console.warn(`⚠️ Panel ${index} — ambient extraction failed, using silence`);
+        }
+      } else {
+        // mute: push silence to keep tracks aligned
+        const silPath = path.join(formatDir, `ambient_sil_${index}.mp3`);
+        createSilenceAudio(ffmpegPath, silPath, resolvedPanelDuration);
+        ambientAudioSegmentPaths.push(silPath);
+      }
     } else {
       resolvedPanelDuration = panelDuration;
+
+      // Static image panel: push silence to keep ambient track aligned
+      const silPath = path.join(formatDir, `ambient_sil_${index}.mp3`);
+      createSilenceAudio(ffmpegPath, silPath, resolvedPanelDuration);
+      ambientAudioSegmentPaths.push(silPath);
     }
 
     const isVideoSource = sourceVisualPath.toLowerCase().endsWith(".mp4");
@@ -951,36 +1029,63 @@ async function generateSingleFormatVideo({
     finalAudioPath = path.join(formatDir, `final_${format}_voice.mp3`);
     concatMediaFiles(ffmpegPath, audioSegmentPaths, finalAudioPath, "audio");
 
-    const mergeResult = spawnSync(
-      ffmpegPath,
-      [
-        "-y",
-        "-i", finalVideoPath,
-        "-i", finalAudioPath,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-ar", "24000",
-        "-ac", "1",
-        "-af", "aresample=async=1:first_pts=0",
-        "-shortest",
-        finalVideoWithAudioPath,
-      ],
-      {
-        encoding: "utf8",
-        shell: false,
+    if (hasRealAmbientAudio && ambientAudioSegmentPaths.length > 0) {
+      // ── Blend narrator + ambient with amix ───────────────────────────────
+      const finalAmbientPath = path.join(formatDir, `final_${format}_ambient.mp3`);
+      concatMediaFiles(ffmpegPath, ambientAudioSegmentPaths, finalAmbientPath, "audio");
+
+      const mergeResult = spawnSync(
+        ffmpegPath,
+        [
+          "-y",
+          "-i", finalVideoPath,
+          "-i", finalAudioPath,
+          "-i", finalAmbientPath,
+          "-filter_complex",
+          "[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0[aout]",
+          "-map", "0:v",
+          "-map", "[aout]",
+          "-c:v", "copy",
+          "-c:a", "aac",
+          "-ar", "24000",
+          "-ac", "1",
+          "-shortest",
+          finalVideoWithAudioPath,
+        ],
+        { encoding: "utf8", shell: false }
+      );
+
+      if (mergeResult.error) {
+        throw new Error(`No se pudo mezclar audio+ambient (${format}): ${mergeResult.error.message}`);
       }
-    );
-
-    if (mergeResult.error) {
-      throw new Error(
-        `No se pudo mezclar audio final (${format}): ${mergeResult.error.message}`
+      if (mergeResult.status !== 0) {
+        throw new Error(`Error amix audio+ambient (${format}): ${mergeResult.stderr || "sin stderr"}`);
+      }
+    } else {
+      // ── Narrator only (no ambient audio) ────────────────────────────────
+      const mergeResult = spawnSync(
+        ffmpegPath,
+        [
+          "-y",
+          "-i", finalVideoPath,
+          "-i", finalAudioPath,
+          "-c:v", "copy",
+          "-c:a", "aac",
+          "-ar", "24000",
+          "-ac", "1",
+          "-af", "aresample=async=1:first_pts=0",
+          "-shortest",
+          finalVideoWithAudioPath,
+        ],
+        { encoding: "utf8", shell: false }
       );
-    }
 
-    if (mergeResult.status !== 0) {
-      throw new Error(
-        `Error mezclando audio final (${format}): ${mergeResult.stderr || "sin stderr"}`
-      );
+      if (mergeResult.error) {
+        throw new Error(`No se pudo mezclar audio final (${format}): ${mergeResult.error.message}`);
+      }
+      if (mergeResult.status !== 0) {
+        throw new Error(`Error mezclando audio final (${format}): ${mergeResult.stderr || "sin stderr"}`);
+      }
     }
 
     outputToUpload = finalVideoWithAudioPath;
@@ -1042,17 +1147,18 @@ export async function POST(req) {
         globalIndex++;
 
         panelData.push({
-          index: globalIndex,
-          globalIndex,
-          page: page.page,
-          panelIndex: i,
-          imageUrl,
-          caption: cleanText(panel.dialogue || ""),
-          imagePrompt: cleanText(panel.imagePrompt || ""),
-          generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
-          animation: panel.animation || null,
-          manualVideoUrl: panel.manualVideoUrl || panel.flowVideoUrl || "",
-        });
+  index: globalIndex,
+  globalIndex,
+  page: page.page,
+  panelIndex: i,
+  imageUrl,
+  caption: cleanText(panel.dialogue || ""),
+  imagePrompt: cleanText(panel.imagePrompt || ""),
+  generatedFrames: Array.isArray(panel.generatedFrames) ? panel.generatedFrames : [],
+  animation: panel.animation || null,
+  manualVideoUrl: panel.manualVideoUrl || panel.flowVideoUrl || "",
+  manualAudioMode: panel.manualAudioMode || "mute",
+});
       }
     }
 

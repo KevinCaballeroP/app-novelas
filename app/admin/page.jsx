@@ -203,6 +203,7 @@ export default function AdminPage() {
     veoCandidate: !!panel.veoCandidate,
     veoPrompt: panel.veoPrompt || "",
     manualVideoUrl: panel.manualVideoUrl || "",
+    manualAudioMode: panel.manualAudioMode || "mute",
     audioUrl: panel.audioUrl || "",
     finalPrompt: panel.finalPrompt || "",
     renderMeta: panel.renderMeta || null,
@@ -688,6 +689,7 @@ export default function AdminPage() {
     veoCandidate: false,
     veoPrompt: "",
     manualVideoUrl: "",
+    manualAudioMode: "mute",
     finalPrompt: "",
     renderMeta: null,
     approved: false,
@@ -1630,10 +1632,38 @@ export default function AdminPage() {
                           href={panel.manualVideoUrl}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ fontSize: "11px", color: "#60a5fa", display: "block", marginBottom: "10px" }}
+                          style={{ fontSize: "11px", color: "#60a5fa", display: "block", marginBottom: "8px" }}
                         >
                           🎥 Ver video guardado
                         </a>
+                      )}
+
+                      {/* Audio del video manual */}
+                      {panel.manualVideoUrl && (
+                        <div style={{ marginBottom: "10px" }}>
+                          <label style={{ fontSize: "12px", color: "#a78bfa", display: "block", marginBottom: "4px" }}>
+                            🔊 Audio del video manual
+                          </label>
+                          <select
+                            value={panel.manualAudioMode || "mute"}
+                            onChange={(e) =>
+                              updatePanelField(pageIndex, panelIndex, "manualAudioMode", e.target.value)
+                            }
+                            style={{
+                              width: "100%",
+                              background: "#1e1e2e",
+                              color: "#e2e8f0",
+                              border: "1px solid rgba(167,139,250,0.4)",
+                              borderRadius: "6px",
+                              padding: "6px 10px",
+                              fontSize: "13px",
+                            }}
+                          >
+                            <option value="mute">🔇 Silenciar audio original</option>
+                            <option value="background">🌊 Usar como ambiente bajo (vol 20%)</option>
+                            <option value="full">🔊 Usar audio original completo</option>
+                          </select>
+                        </div>
                       )}
 
                       {/* Botones de imagen */}
