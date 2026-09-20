@@ -137,6 +137,9 @@ export default function AdminPage() {
             veoCandidate: !!panel.veoCandidate,
             veoPrompt: panel.veoPrompt || "",
             manualVideoUrl: panel.manualVideoUrl || panel.flowVideoUrl || "",
+            manualAudioMode: panel.manualAudioMode || "mute",
+            narration: panel.narration || "",
+            narrationStart: typeof panel.narrationStart === "number" ? panel.narrationStart : null,
             finalPrompt: panel.finalPrompt || "",
             renderMeta: panel.renderMeta || null,
             approved: !!panel.approved,
@@ -204,6 +207,8 @@ export default function AdminPage() {
     veoPrompt: panel.veoPrompt || "",
     manualVideoUrl: panel.manualVideoUrl || "",
     manualAudioMode: panel.manualAudioMode || "mute",
+    narration: panel.narration || "",
+    narrationStart: typeof panel.narrationStart === "number" ? panel.narrationStart : null,
     audioUrl: panel.audioUrl || "",
     finalPrompt: panel.finalPrompt || "",
     renderMeta: panel.renderMeta || null,
@@ -690,6 +695,8 @@ export default function AdminPage() {
     veoPrompt: "",
     manualVideoUrl: "",
     manualAudioMode: "mute",
+    narration: "",
+    narrationStart: null,
     finalPrompt: "",
     renderMeta: null,
     approved: false,
@@ -1659,10 +1666,55 @@ export default function AdminPage() {
                               fontSize: "13px",
                             }}
                           >
-                            <option value="mute">🔇 Silenciar audio original</option>
-                            <option value="background">🌊 Usar como ambiente bajo (vol 20%)</option>
-                            <option value="full">🔊 Usar audio original completo</option>
+                            <option value="mute">🔇 Sin audio Flow — usar narrador TTS</option>
+                            <option value="background">🌊 Ambiente Flow bajo + TTS</option>
+                            <option value="full">🔊 Audio Flow completo + TTS</option>
+                            <option value="dialogue">🗣️ Diálogo Flow — sin TTS</option>
+                            <option value="hybrid">🎭 Diálogo Flow + narrador TTS</option>
                           </select>
+
+                          {panel.manualAudioMode === "hybrid" && (
+                            <div
+                              style={{
+                                marginTop: "10px",
+                                padding: "10px",
+                                border: "1px solid rgba(167,139,250,0.3)",
+                                borderRadius: "8px",
+                              }}
+                            >
+                              <label style={{ fontSize: "12px", color: "#fbbf24", display: "block", marginBottom: "4px" }}>
+                                🎙️ Narración
+                              </label>
+                              <textarea
+                                value={panel.narration || ""}
+                                onChange={(e) =>
+                                  updatePanelField(pageIndex, panelIndex, "narration", e.target.value)
+                                }
+                                placeholder="Texto que dirá el narrador..."
+                                style={{ width: "100%", minHeight: "60px", marginBottom: "8px", resize: "vertical" }}
+                              />
+
+                              <label style={{ fontSize: "12px", color: "#fbbf24", display: "block", marginBottom: "4px" }}>
+                                ⏱️ Inicio del narrador (segundos)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={panel.narrationStart ?? ""}
+                                onChange={(e) =>
+                                  updatePanelField(
+                                    pageIndex,
+                                    panelIndex,
+                                    "narrationStart",
+                                    e.target.value === "" ? null : Number(e.target.value)
+                                  )
+                                }
+                                placeholder="Ej: 6.0"
+                                style={{ width: "100%" }}
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
 

@@ -649,7 +649,8 @@ function getSubtitleFontPath() {
 function buildTextFilter(
   textPath,
   mood,
-  format = "tiktok"
+  format = "tiktok",
+  enable = ""
 ) {
   const profile =
     getFormatProfile(format);
@@ -690,7 +691,7 @@ function buildTextFilter(
       "black@0.60";
   }
 
-  return [
+  const parts = [
     `drawtext=fontfile='${fontPath}':textfile='${escapedTextPath}'`,
     `fontcolor=white`,
     `fontsize=${fontsize}`,
@@ -701,7 +702,13 @@ function buildTextFilter(
     `boxcolor=${boxColor}`,
     `boxborderw=${boxBorder}`,
     `fix_bounds=true`,
-  ].join(":");
+  ];
+
+  if (enable) {
+    parts.push(`enable='${enable}'`);
+  }
+
+  return parts.join(":");
 }
 
 async function generateVoiceForPanel(
@@ -1325,20 +1332,77 @@ async function buildSharedPanelAssets(
     let voicePath = "";
     let realAudioDuration = 0;
 
-    if (
-      usePanelVoices &&
-      caption
-    ) {
-      const panelAudioUrl =
-        await generateVoiceForPanel(
-          caption
-        );
+    // ── Determinar modo de audio del panel ───────────────────
+    const audioModeShared =
+      panel.manualAudioMode || "mute";
 
-      voicePath =
-        path.join(
-          tempDir,
-          `shared_voice_${index}.mp3`
+    // dialogue y hybrid NO generan TTS desde panel.dialogue
+    const skipDialogueTTS =
+      audioModeShared === "dialogue" ||
+      audioModeShared === "hybrid";
+
+    // ── Logging por modo ─────────────────────────────────────
+    if (panel.manualVideoUrl) {
+      if (audioModeShared === "dialogue") {
+        console.log(
+          `🎬 Panel ${index} — Audio mode: dialogue`
         );
+        console.log(`🗣️ Usando diálogo original de Flow`);
+        console.log(`⏭️ TTS de dialogue omitido`);
+      } else if (audioModeShared === "hybrid") {
+        console.log(
+          `🎬 Panel ${index} — Audio mode: hybrid`
+        );
+        console.log(`🗣️ Usando diálogo original de Flow`);
+        if (panel.narration) {
+          console.log(`🎙️ Generando narración TTS desde panel.narration`);
+          if (typeof panel.narrationStart === "number") {
+            console.log(
+              `⏱️ Narración inicia en ${panel.narrationStart}s`
+            );
+          } else {
+            console.warn(
+              `⚠️ Panel ${index} — hybrid: narrationStart no definido, usando 0 como fallback`
+            );
+          }
+        } else {
+          console.warn(
+            `⚠️ Panel ${index} — hybrid sin narration, conservando solo audio de Flow`
+          );
+        }
+      } else {
+        console.log(
+          `🎬 Panel ${index} — Audio mode: ${audioModeShared}`
+        );
+        if (caption) {
+          console.log(`🎙️ Generando TTS tradicional desde dialogue`);
+        }
+      }
+    }
+
+    // ── Seleccionar texto para TTS ───────────────────────────
+    // dialogue → sin TTS (ttsText vacío)
+    // hybrid   → TTS de panel.narration (NUNCA de panel.dialogue)
+    // mute / background / full → TTS de caption (=panel.dialogue)
+    let ttsText = "";
+
+    if (skipDialogueTTS) {
+      ttsText =
+        audioModeShared === "hybrid"
+          ? panel.narration || ""
+          : "";
+    } else {
+      ttsText = caption;
+    }
+
+    if (usePanelVoices && ttsText) {
+      const panelAudioUrl =
+        await generateVoiceForPanel(ttsText);
+
+      voicePath = path.join(
+        tempDir,
+        `shared_voice_${index}.mp3`
+      );
 
       console.log(
         "🎤 Descargando voz panel:",
@@ -1346,16 +1410,12 @@ async function buildSharedPanelAssets(
         panelAudioUrl
       );
 
-      await downloadFile(
-        panelAudioUrl,
+      await downloadFile(panelAudioUrl, voicePath);
+
+      realAudioDuration = getAudioDuration(
+        ffmpegPath,
         voicePath
       );
-
-      realAudioDuration =
-        getAudioDuration(
-          ffmpegPath,
-          voicePath
-        );
     }
 
     sharedPanels.push({
@@ -1477,10 +1537,42 @@ async function generateSingleFormatVideo({
         );
     }
 
-    const currentVoiceDelay =
+    // Para hybrid, el offset de narración reemplaza al voiceDelay estándar.
+    // narrationStart es EXPLÍCITO: si no viene definido se usa 0 + warning.
+    let currentVoiceDelay =
       isManualVideo
         ? 0
         : VOICE_START_DELAY;
+
+    if (
+      isManualVideo &&
+      panel.manualAudioMode === "hybrid"
+    ) {
+      if (
+        panel.narrationStart !== null &&
+        panel.narrationStart !== undefined
+      ) {
+        const requestedStart =
+          Number(panel.narrationStart) || 0;
+
+        if (
+          manualVideoDuration > 0 &&
+          requestedStart > manualVideoDuration
+        ) {
+          console.warn(
+            `⚠️ Panel ${index} — narrationStart (${requestedStart}s) supera la duración del video (${manualVideoDuration.toFixed(2)}s). Usando 0.`
+          );
+          currentVoiceDelay = 0;
+        } else {
+          currentVoiceDelay = requestedStart;
+        }
+      } else {
+        console.warn(
+          `⚠️ Panel ${index} — hybrid sin narrationStart definido. Usando 0 como fallback.`
+        );
+        currentVoiceDelay = 0;
+      }
+    }
 
     console.log(
       `🎬 Panel ${index} — MANUAL VIDEO: ${isManualVideo}`
@@ -1721,6 +1813,10 @@ async function generateSingleFormatVideo({
     let manualFreezeDuration = 0;
     let manualPingPongTargetDuration = 0;
 
+    const audioMode =
+      panel.manualAudioMode ||
+      "mute";
+
     if (
       isManualVideo &&
       manualVideoDuration > 0
@@ -1747,7 +1843,20 @@ async function generateSingleFormatVideo({
           0
         );
 
+      // En dialogue/hybrid NUNCA repetimos ni invertimos el video de Flow.
+      // Si la narración dura más que el clip, congelamos el último frame.
+      // Así evitamos que Dayana/Alejandro vuelvan a hablar por un loop/reversa.
       if (
+        (audioMode === "dialogue" || audioMode === "hybrid") &&
+        narrationOverflow > 0
+      ) {
+        manualVisualMode =
+          "normal";
+
+        manualFreezeDuration =
+          narrationOverflow +
+          AFTER_MANUAL_VIDEO_PAUSE;
+      } else if (
         narrationOverflow > 0 &&
         narrationOverflow <= 3
       ) {
@@ -1758,7 +1867,6 @@ async function generateSingleFormatVideo({
           audioTotal /
           manualVideoDuration;
 
-        // La pausa final se conserva congelando el último frame.
         manualFreezeDuration =
           AFTER_MANUAL_VIDEO_PAUSE;
       } else if (
@@ -1767,16 +1875,12 @@ async function generateSingleFormatVideo({
         manualVisualMode =
           "pingpong";
 
-        // El clip ping-pong cubrirá toda la duración del audio.
         manualPingPongTargetDuration =
           audioTotal;
 
-        // Solo congelamos la pequeña pausa final.
         manualFreezeDuration =
           AFTER_MANUAL_VIDEO_PAUSE;
       } else {
-        // La voz cabe dentro del video:
-        // reproducimos Flow una sola vez y congelamos solo la pausa final.
         manualVisualMode =
           "normal";
 
@@ -1817,52 +1921,64 @@ async function generateSingleFormatVideo({
         )}s`
       );
 
-      const missingSilence =
-        baseVisualDuration -
-        audioTotal;
+      // ── Pista de narración: silencio de relleno ──────────────
+      // dialogue: no hay TTS; añadimos silencio igual a resolvedPanelDuration
+      //           para mantener la sincronía exacta del timeline de audio.
+      // hybrid / mute / background / full: lógica estándar
+      //           (missingSilence + afterManualPause).
+      if (audioMode === "dialogue") {
+        const dialogueSilPath = path.join(
+          formatDir,
+          `dialogue_sil_${index}.mp3`
+        );
 
-      console.log(
-        `🎥 Panel ${index} — MISSING SILENCE: ${missingSilence.toFixed(
-          3
-        )}s`
-      );
+        createSilenceAudio(
+          ffmpegPath,
+          dialogueSilPath,
+          resolvedPanelDuration
+        );
 
-      if (
-        missingSilence >
-        0.05
-      ) {
-        const fillSilencePath =
-          path.join(
+        audioSegmentPaths.push(dialogueSilPath);
+
+        console.log(
+          `🔇 Panel ${index} — Silencio TTS: ${resolvedPanelDuration.toFixed(3)}s (modo dialogue)`
+        );
+      } else {
+        const missingSilence =
+          baseVisualDuration - audioTotal;
+
+        console.log(
+          `🎥 Panel ${index} — MISSING SILENCE: ${missingSilence.toFixed(3)}s`
+        );
+
+        if (missingSilence > 0.05) {
+          const fillSilencePath = path.join(
             formatDir,
             `fill_manual_${index}.mp3`
           );
 
-        createSilenceAudio(
-          ffmpegPath,
-          fillSilencePath,
-          missingSilence
-        );
+          createSilenceAudio(
+            ffmpegPath,
+            fillSilencePath,
+            missingSilence
+          );
 
-        audioSegmentPaths.push(
-          fillSilencePath
-        );
-      }
+          audioSegmentPaths.push(fillSilencePath);
+        }
 
-      const afterManualPausePath =
-        path.join(
+        const afterManualPausePath = path.join(
           formatDir,
           `after_manual_${index}.mp3`
         );
 
-      createSilenceAudio(
-        ffmpegPath,
-        afterManualPausePath,
-        AFTER_MANUAL_VIDEO_PAUSE
-      );
+        createSilenceAudio(
+          ffmpegPath,
+          afterManualPausePath,
+          AFTER_MANUAL_VIDEO_PAUSE
+        );
 
-      audioSegmentPaths.push(
-        afterManualPausePath
-      );
+        audioSegmentPaths.push(afterManualPausePath);
+      }
 
       console.log(
         `🎥 Panel ${index} — RESOLVED PANEL DURATION: ${resolvedPanelDuration.toFixed(
@@ -1870,24 +1986,22 @@ async function generateSingleFormatVideo({
         )}s`
       );
 
-      const audioMode =
-        panel.manualAudioMode ||
-        "mute";
-
       console.log(
         `🎥 Panel ${index} — MANUAL AUDIO MODE: ${audioMode}`
       );
 
+      // dialogue → audio Flow vol 1.0 (equivalente a full)
+      // hybrid   → audio Flow vol 1.0
+      //            (ducking durante narración: segunda iteración)
+      // background → vol 0.2  |  full → vol 1.0  (sin cambios)
       if (
-        audioMode ===
-          "background" ||
-        audioMode === "full"
+        audioMode === "background" ||
+        audioMode === "full" ||
+        audioMode === "dialogue" ||
+        audioMode === "hybrid"
       ) {
         const ambientVolume =
-          audioMode ===
-          "background"
-            ? 0.2
-            : 1.0;
+          audioMode === "background" ? 0.2 : 1.0;
 
         const ambientPath =
           path.join(
@@ -1901,9 +2015,6 @@ async function generateSingleFormatVideo({
             [
               "-y",
 
-              "-stream_loop",
-              "-1",
-
               "-i",
               panel.manualVideoPath,
 
@@ -1914,8 +2025,10 @@ async function generateSingleFormatVideo({
 
               "-vn",
 
+              // Reproducir el audio de Flow UNA sola vez.
+              // Cuando termina, completar con silencio; nunca hacer loop.
               "-af",
-              `volume=${ambientVolume}`,
+              `volume=${ambientVolume},apad=pad_dur=${resolvedPanelDuration.toFixed(3)}`,
 
               "-ar",
               "24000",
@@ -2113,34 +2226,157 @@ async function generateSingleFormatVideo({
           ? 2
           : 3;
 
-      const lines =
-        splitCaptionIntoLines(
-          normalizeCaptionForFile(
-            captionForVideo
-          ),
+      // Para videos Flow con dialogue/hybrid, el texto ya no queda fijo
+      // durante todo el panel. Se divide por intervenciones y cambia
+      // conforme avanza el diálogo.
+      if (
+        isManualVideo &&
+        (audioMode === "dialogue" || audioMode === "hybrid")
+      ) {
+        const rawSubtitle =
+          String(panel.subtitleText || panel.caption || "")
+            .replace(/\r/g, "")
+            .trim();
 
-          profile.wordsPerLine,
+        const narrationNormalized =
+          cleanText(panel.narration || "").toLowerCase();
 
-          maxLines
-        );
+        let dialogueLines =
+          rawSubtitle
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
 
-      fs.writeFileSync(
-        textPath,
-        lines.join("\n"),
-        "utf8"
-      );
+        // Si el storyboard dejó también la narración dentro de Diálogo,
+        // no la mostramos dos veces: la narración tendrá su propio segmento.
+        if (narrationNormalized) {
+          dialogueLines = dialogueLines.filter(
+            (line) => cleanText(line).toLowerCase() !== narrationNormalized
+          );
+        }
 
-      const textFilter =
-        buildTextFilter(
+        // Compatibilidad con paneles antiguos donde los saltos de línea
+        // ya se habían perdido: usamos frases como fallback.
+        if (dialogueLines.length <= 1 && rawSubtitle) {
+          dialogueLines = rawSubtitle
+            .split(/(?<=[.!?])\s+/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        }
+
+        const dialogueEnd =
+          audioMode === "hybrid" &&
+          currentVoiceDelay > 0
+            ? Math.min(currentVoiceDelay, manualVideoDuration || resolvedPanelDuration)
+            : Math.min(manualVideoDuration || resolvedPanelDuration, resolvedPanelDuration);
+
+        if (dialogueLines.length > 0 && dialogueEnd > 0.05) {
+          const segmentDuration = dialogueEnd / dialogueLines.length;
+
+          dialogueLines.forEach((line, lineIndex) => {
+            const start = lineIndex * segmentDuration;
+            const end = Math.min(
+              dialogueEnd,
+              (lineIndex + 1) * segmentDuration
+            );
+
+            const subtitlePath = path.join(
+              formatDir,
+              `caption_${index}_${lineIndex}.txt`
+            );
+
+            const wrapped = splitCaptionIntoLines(
+              normalizeCaptionForFile(line),
+              profile.wordsPerLine,
+              maxLines
+            );
+
+            fs.writeFileSync(
+              subtitlePath,
+              wrapped.join("\n"),
+              "utf8"
+            );
+
+            vfParts.push(
+              buildTextFilter(
+                subtitlePath,
+                mood,
+                format,
+                `between(t,${start.toFixed(3)},${end.toFixed(3)})`
+              )
+            );
+          });
+        }
+
+        // En hybrid mostramos la narración exactamente desde narrationStart
+        // y solo durante la duración real de su TTS.
+        if (
+          audioMode === "hybrid" &&
+          panel.narration &&
+          panel.realAudioDuration > 0
+        ) {
+          const narrationStart = Math.max(currentVoiceDelay, 0);
+          const narrationEnd = Math.min(
+            resolvedPanelDuration,
+            narrationStart + panel.realAudioDuration
+          );
+
+          const narrationSubtitlePath = path.join(
+            formatDir,
+            `caption_narration_${index}.txt`
+          );
+
+          const narrationLines = splitCaptionIntoLines(
+            normalizeCaptionForFile(panel.narration),
+            profile.wordsPerLine,
+            maxLines
+          );
+
+          fs.writeFileSync(
+            narrationSubtitlePath,
+            narrationLines.join("\n"),
+            "utf8"
+          );
+
+          vfParts.push(
+            buildTextFilter(
+              narrationSubtitlePath,
+              mood,
+              format,
+              `between(t,${narrationStart.toFixed(3)},${narrationEnd.toFixed(3)})`
+            )
+          );
+        }
+      } else {
+        const lines =
+          splitCaptionIntoLines(
+            normalizeCaptionForFile(
+              captionForVideo
+            ),
+
+            profile.wordsPerLine,
+
+            maxLines
+          );
+
+        fs.writeFileSync(
           textPath,
-          mood,
-          format
+          lines.join("\n"),
+          "utf8"
         );
 
-      if (textFilter) {
-        vfParts.push(
-          textFilter
-        );
+        const textFilter =
+          buildTextFilter(
+            textPath,
+            mood,
+            format
+          );
+
+        if (textFilter) {
+          vfParts.push(
+            textFilter
+          );
+        }
       }
     }
 
@@ -2819,6 +3055,12 @@ export async function POST(
                 ""
             ),
 
+          // Conserva los saltos de línea para subtítulos temporizados.
+          subtitleText:
+            String(panel.dialogue || "")
+              .replace(/\r/g, "")
+              .trim(),
+
           imagePrompt:
             cleanText(
               panel.imagePrompt ||
@@ -2844,6 +3086,20 @@ export async function POST(
           manualAudioMode:
             panel.manualAudioMode ||
             "mute",
+
+          // Nuevos campos para modos dialogue / hybrid
+          narration:
+            cleanText(
+              panel.narration || ""
+            ),
+
+          // narrationStart: valor explícito en segundos.
+          // null indica que el usuario NO lo proporcionó (se emite warning en runtime).
+          narrationStart:
+            typeof panel.narrationStart ===
+            "number"
+              ? panel.narrationStart
+              : null,
         });
       }
     }
